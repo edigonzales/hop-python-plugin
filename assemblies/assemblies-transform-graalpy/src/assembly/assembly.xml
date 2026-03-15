@@ -1,0 +1,47 @@
+<assembly xmlns="http://maven.apache.org/ASSEMBLY/2.1.1"
+          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+          xsi:schemaLocation="http://maven.apache.org/ASSEMBLY/2.1.1 https://maven.apache.org/xsd/assembly-2.1.1.xsd">
+  <id>transform</id>
+  <formats>
+    <format>zip</format>
+  </formats>
+  <includeBaseDirectory>false</includeBaseDirectory>
+
+  <files>
+    <file>
+      <source>${project.basedir}/../../hop-transform-graalpy/src/main/resources/version.xml</source>
+      <outputDirectory>plugins/transforms/graalpy</outputDirectory>
+      <filtered>true</filtered>
+    </file>
+  </files>
+
+  <dependencySets>
+    <dependencySet>
+      <useProjectArtifact>false</useProjectArtifact>
+      <useTransitiveDependencies>false</useTransitiveDependencies>
+      <outputDirectory>plugins/transforms/graalpy</outputDirectory>
+      <scope>runtime</scope>
+      <unpack>false</unpack>
+      <includes>
+        <include>ch.so.agi:hop-transform-graalpy</include>
+      </includes>
+    </dependencySet>
+
+    <dependencySet>
+      <useProjectArtifact>false</useProjectArtifact>
+      <useTransitiveDependencies>true</useTransitiveDependencies>
+      <outputDirectory>plugins/transforms/graalpy/lib</outputDirectory>
+      <outputFileNameMapping>${artifact.artifactId}${dashClassifier?}.${artifact.extension}</outputFileNameMapping>
+      <scope>runtime</scope>
+      <unpack>false</unpack>
+      <excludes>
+        <exclude>ch.so.agi:hop-transform-graalpy</exclude>
+        <exclude>org.apache.hop:hop-core</exclude>
+        <exclude>org.apache.hop:hop-engine</exclude>
+        <exclude>org.apache.hop:hop-ui</exclude>
+        <exclude>org.graalvm.polyglot:python</exclude>
+        <exclude>org.graalvm.python:python</exclude>
+      </excludes>
+    </dependencySet>
+  </dependencySets>
+</assembly>
