@@ -56,6 +56,7 @@ class GraalPyExternalEnvironmentTest {
   void resolveExecutableFindsWindowsLaunchersInPriorityOrder() throws Exception {
     Files.createDirectories(tempDir.resolve("Scripts"));
     Files.createFile(tempDir.resolve("Scripts").resolve("python.exe"));
+    Files.createFile(tempDir.resolve("Scripts").resolve("graalpy.exe"));
 
     Path executable = GraalPyExternalEnvironment.resolveExecutable(tempDir, "Windows 11");
 

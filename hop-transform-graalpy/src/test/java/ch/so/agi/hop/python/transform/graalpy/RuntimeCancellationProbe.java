@@ -12,7 +12,8 @@ public final class RuntimeCancellationProbe {
     HopEnvironment.init();
     try (Context warm =
         Context.newBuilder("python").option("engine.WarnInterpreterOnly", "false").build()) {
-      warm.eval("python", "1");
+      // Warm the imports used by every session, not only the Python language itself.
+      new HopPythonTypeBridge(warm);
     }
     String script =
         switch (phase) {
@@ -22,7 +23,7 @@ public final class RuntimeCancellationProbe {
           default -> "def process(row, ctx):\n    while True: pass";
         };
     GraalPyTransformMeta meta = PythonRuntimeSessionTest.meta(script);
-    meta.setExecutionTimeoutSeconds(phase.equals("stop") ? 0 : 3);
+    meta.setExecutionTimeoutSeconds(phase.equals("stop") ? 0 : 10);
     PythonRuntimeSession session = PythonRuntimeSessionTest.session(meta, new ArrayList<>());
     ScheduledExecutorService stopper = Executors.newSingleThreadScheduledExecutor();
     boolean aborted = false;

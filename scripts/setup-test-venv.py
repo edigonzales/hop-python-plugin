@@ -53,9 +53,9 @@ def main():
     executable = distribution / "bin" / ("graalpy.exe" if os_name == "windows" else "graalpy")
     venv = root / "venv"
     subprocess.run([str(executable), "-m", "venv", str(venv)], check=True, timeout=180)
-    python = venv / ("Scripts/graalpy.exe" if os_name == "windows" else "bin/graalpy")
-    if not python.exists() and os_name == "windows":
-        python = venv / "Scripts/python.exe"
+    # On Windows python.exe is the venv redirector; graalpy.exe is a copied
+    # distribution launcher that searches for its JVM relative to Scripts.
+    python = venv / ("Scripts/python.exe" if os_name == "windows" else "bin/graalpy")
     subprocess.run([str(python), "-m", "pip", "install", "packaging==25.0"], check=True, timeout=180)
     subprocess.run([sys.executable, "-m", "venv", "--without-pip", str(root / "cpython-venv")], check=True, timeout=60)
     print(f"GraalPy test venv: {venv}")

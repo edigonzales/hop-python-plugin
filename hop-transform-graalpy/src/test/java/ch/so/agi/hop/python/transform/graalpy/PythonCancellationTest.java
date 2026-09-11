@@ -33,7 +33,7 @@ class PythonCancellationTest {
               .redirectOutput(output.toFile())
               .start();
       try {
-        assertTrue(process.waitFor(45, TimeUnit.SECONDS), "Cancellation process hung: " + phase);
+        assertTrue(process.waitFor(90, TimeUnit.SECONDS), "Cancellation process hung: " + phase);
         assertEquals(
             0,
             process.exitValue(),

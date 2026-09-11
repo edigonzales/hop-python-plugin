@@ -100,7 +100,7 @@ The editor's **Load**, **Save** and **Save as** remain import/export convenience
 
 ## External GraalPy environments
 
-Enable **External GraalPy environment** and supply a GraalPy-created venv. Provision it and install packages outside Hop; the dialog does not run pip.
+Enable **External GraalPy environment** and supply a GraalPy-created venv. Provision it and install packages outside Hop; the dialog does not run pip. On Windows, use `Scripts/python.exe` inside the venv (also selected by the plugin): the copied `Scripts/graalpy.exe` launcher searches for the standalone JVM relative to its new location and can fail to start.
 
 Before loading the user script, Hop probes the selected interpreter using a fixed isolated command with a ten-second timeout. It checks `sys.implementation`, the language version and the distribution's `release` metadata against GraalPy 25.3.4.1, then verifies the embedded context's actual venv prefix. This matters because the 25.3.4.1 distribution reports only 25.3.4 in `sys.graalpy_version_info`. Missing distribution metadata, CPython environments and mismatched versions are rejected explicitly.
 

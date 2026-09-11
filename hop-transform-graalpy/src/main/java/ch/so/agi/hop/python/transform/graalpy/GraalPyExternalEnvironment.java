@@ -14,8 +14,9 @@ record GraalPyExternalEnvironment(boolean enabled, Path venvPath, Path executabl
   private static final Class<?> PKG = GraalPyExternalEnvironment.class;
   private static final List<String> UNIX_EXECUTABLES =
       List.of("bin/graalpy", "bin/python3", "bin/python");
+  // Prefer the venv redirector. The copied graalpy.exe expects the standalone JVM nearby.
   private static final List<String> WINDOWS_EXECUTABLES =
-      List.of("Scripts/graalpy.exe", "Scripts/python.exe", "Scripts/python3.exe");
+      List.of("Scripts/python.exe", "Scripts/python3.exe", "Scripts/graalpy.exe");
 
   static GraalPyExternalEnvironment disabled() {
     return new GraalPyExternalEnvironment(false, null, null);
