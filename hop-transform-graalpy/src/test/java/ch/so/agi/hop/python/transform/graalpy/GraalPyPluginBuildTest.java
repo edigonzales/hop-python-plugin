@@ -23,14 +23,11 @@ import org.apache.hop.core.plugins.PluginRegistry;
 import org.apache.hop.core.variables.IVariables;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
 import org.eclipse.swt.widgets.Shell;
 import org.apache.hop.pipeline.PipelineMeta;
 import org.apache.hop.pipeline.transform.ITransformMeta;
 
 class GraalPyPluginBuildTest {
-  @TempDir Path tempDir;
-
   @AfterEach
   void resetHop() {
     HopEnvironment.reset();
@@ -43,7 +40,12 @@ class GraalPyPluginBuildTest {
 
   @Test
   void pluginLoadsFromExternalPluginFolder() throws Exception {
-    Path pluginBaseDir = tempDir.resolve("plugins");
+    // Hop 2.19.0 creates an untracked URLClassLoader while scanning external plugin JARs. On
+    // Windows that loader keeps the JAR open after the scan, so placing this fixture below
+    // JUnit's @TempDir makes the extension cleanup fail. Maven's target directory is already
+    // cleaned by `mvn clean` and is therefore the appropriate lifetime for this fixture.
+    Path pluginBaseDir =
+        Files.createTempDirectory(Path.of("target"), "external-plugin-test-").resolve("plugins");
     Path pluginDir = pluginBaseDir.resolve("transforms").resolve("graalpy");
     Files.createDirectories(pluginDir);
     createPluginJar(pluginDir.resolve("hop-transform-graalpy-test.jar"));
