@@ -1,6 +1,6 @@
 # hop-python-plugin
 
-Apache Hop `2.17.0` transform plugin that executes inline Python scripts with GraalPy.
+Apache Hop `2.19.0` transform plugin that executes inline Python scripts with GraalPy.
 
 ## Modules
 
@@ -25,10 +25,12 @@ mvn -pl hop-transform-graalpy -am -DskipTests package
 
 Build prerequisites:
 
-- Java 17 compatible toolchain (`maven.compiler.release=17`)
-- Regular JDK 17, not a GraalVM JDK
+- Java 21 compatible toolchain (`maven.compiler.release=21`)
+- Regular Temurin/OpenJDK 21 or 25, not a GraalVM JDK
 
-GraalPy `25.0.2` conflicts with GraalVM JDK bundled modules during plugin tests, so use Temurin/OpenJDK 17.
+The plugin embeds GraalPy `25.3.4.1`. The CI verifies Java 21 and 25 on Ubuntu, macOS and Windows. Use a regular Temurin/OpenJDK runtime rather than a GraalVM JDK, because the plugin ships the GraalPy language runtime itself.
+
+The canonical CI build is Ubuntu with Java 21. It runs `mvn -U -B -ntp clean verify`, validates the complete install ZIP and runs an Installed-Hop smoke test. The other five matrix combinations run `clean test` for compatibility. Pull requests never publish Maven artifacts; successful `main` builds publish the already verified ZIP as `ch.so.agi:hop-transform-graalpy:0.1.0-SNAPSHOT` to `https://jars.interlis.guru/snapshots/`.
 
 ## Install in Hop
 
@@ -177,10 +179,49 @@ Available helpers:
 - `ctx.log.info(...)`, `ctx.log.warn(...)`, `ctx.log.error(...)`
 - `ctx.fields`
 
+## Script import and export
+
+The dialog keeps storing the Python code inline in the transform metadata, but it now supports file-based editor convenience:
+
+- `Load...` reads a `.py` file into the editor
+- `Save` writes back to the last file used in the current dialog session
+- `Save As...` writes the current editor content to a chosen `.py` file
+
+Important:
+
+- load/save paths are session-local dialog state and are not stored in the pipeline
+- the inline script remains the only persisted script source
+- script files are handled as UTF-8
+
+## External GraalPy venv
+
+The dialog can optionally enable imports from an external GraalPy virtual environment.
+
+Configuration:
+
+- enable `External Python environment`
+- point `GraalPy venv path` to a GraalPy-created venv
+- the path can use Hop variables
+
+Rules and limits:
+
+- only GraalPy-created venvs are supported, not CPython venvs
+- the venv should match the plugin GraalPy version `25.3.4.1`
+- there is no `pip` action in the dialog; manage the venv outside Hop
+- there is no generic `sys.path` UI in this feature
+
+Security:
+
+- by default the transform remains sandboxed
+- enabling the external venv explicitly relaxes the sandbox so filesystem-based imports work
+- native Python packages are then effectively trusted code and can break the previous safety boundary
+
 ## V1 limits
 
-- inline scripts only
+- scripts remain inline in the pipeline; the dialog also provides session-local file import/export convenience
 - static output schema only
 - no `yield` or generator contract
 - no direct Java access from Python
-- no plugin UI support for `sys.path`, virtualenvs or external Python package configuration
+- no built-in `pip` or package installation workflow
+- no generic `sys.path` UI
+- no support for CPython or arbitrary foreign Python interpreters

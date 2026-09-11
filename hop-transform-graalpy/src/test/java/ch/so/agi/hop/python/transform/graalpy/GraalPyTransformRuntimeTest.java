@@ -8,6 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.math.BigDecimal;
+import java.nio.file.Path;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.ArrayList;
@@ -27,6 +28,7 @@ import org.apache.hop.core.row.value.ValueMetaNumber;
 import org.apache.hop.core.row.value.ValueMetaString;
 import org.apache.hop.pipeline.transforms.mock.TransformMockHelper;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -357,6 +359,64 @@ class GraalPyTransformRuntimeTest {
       assertNotNull(first.data.context);
       assertNotNull(second.data.context);
       assertNotSame(first.data.context, second.data.context);
+    }
+  }
+
+  @Test
+  void externalEnvironmentImportsConfiguredPurePythonPackage() throws Exception {
+    String venv = System.getProperty("graalpy.test.venv");
+    String packageName = System.getProperty("graalpy.test.pure.package");
+    Assumptions.assumeTrue(venv != null && packageName != null);
+
+    GraalPyTransformMeta meta =
+        meta(
+            """
+            def process(row, ctx):
+                module = __import__(row["package"])
+                return {"module": module.__name__}
+            """,
+            GraalPyExecutionMode.RETURN_ONE,
+            field("module", "String", -1, -1, false));
+    meta.setExternalEnvironmentEnabled(true);
+    meta.setGraalPyVenvPath(venv);
+
+    RowMeta inputRowMeta = new RowMeta();
+    inputRowMeta.addValueMeta(new ValueMetaString("package"));
+
+    try (Harness harness = harness(meta, inputRowMeta, row(packageName))) {
+      List<Object[]> rows = harness.execute();
+
+      assertEquals(1, rows.size());
+      assertEquals(packageName, rows.get(0)[1]);
+    }
+  }
+
+  @Test
+  void externalEnvironmentImportsConfiguredNativePackage() throws Exception {
+    String venv = System.getProperty("graalpy.test.venv");
+    String packageName = System.getProperty("graalpy.test.native.package");
+    Assumptions.assumeTrue(venv != null && packageName != null);
+
+    GraalPyTransformMeta meta =
+        meta(
+            """
+            def process(row, ctx):
+                module = __import__(row["package"])
+                return {"module": module.__name__}
+            """,
+            GraalPyExecutionMode.RETURN_ONE,
+            field("module", "String", -1, -1, false));
+    meta.setExternalEnvironmentEnabled(true);
+    meta.setGraalPyVenvPath(venv);
+
+    RowMeta inputRowMeta = new RowMeta();
+    inputRowMeta.addValueMeta(new ValueMetaString("package"));
+
+    try (Harness harness = harness(meta, inputRowMeta, row(packageName))) {
+      List<Object[]> rows = harness.execute();
+
+      assertEquals(1, rows.size());
+      assertEquals(packageName, rows.get(0)[1]);
     }
   }
 

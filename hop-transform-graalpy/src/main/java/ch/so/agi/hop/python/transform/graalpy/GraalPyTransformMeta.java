@@ -4,7 +4,7 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
-import org.apache.commons.lang.StringUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.hop.core.CheckResult;
 import org.apache.hop.core.ICheckResult;
 import org.apache.hop.core.annotations.Transform;
@@ -39,6 +39,8 @@ public class GraalPyTransformMeta extends BaseTransformMeta<GraalPyTransform, Gr
 
   @HopMetadataProperty private String scriptText;
   @HopMetadataProperty private String executionMode;
+  @HopMetadataProperty private boolean externalEnvironmentEnabled;
+  @HopMetadataProperty private String graalPyVenvPath;
   @HopMetadataProperty(groupKey = "outputFields", key = "outputField")
   private List<GraalPyOutputField> outputFields;
 
@@ -51,6 +53,8 @@ public class GraalPyTransformMeta extends BaseTransformMeta<GraalPyTransform, Gr
     this();
     this.scriptText = other.scriptText;
     this.executionMode = other.executionMode;
+    this.externalEnvironmentEnabled = other.externalEnvironmentEnabled;
+    this.graalPyVenvPath = other.graalPyVenvPath;
     this.outputFields.clear();
     other.outputFields.forEach(field -> this.outputFields.add(new GraalPyOutputField(field)));
   }
@@ -72,6 +76,8 @@ public class GraalPyTransformMeta extends BaseTransformMeta<GraalPyTransform, Gr
             + "    # return None to filter a row or return a dict to produce output\n"
             + "    return row\n";
     executionMode = GraalPyExecutionMode.RETURN_ONE.getCode();
+    externalEnvironmentEnabled = false;
+    graalPyVenvPath = "";
   }
 
   public void validate(IRowMeta inputRowMeta) throws HopTransformException {
@@ -81,6 +87,10 @@ public class GraalPyTransformMeta extends BaseTransformMeta<GraalPyTransform, Gr
     if (getExecutionModeEnum() == null) {
       throw new HopTransformException(
           BaseMessages.getString(PKG, "GraalPyTransformMeta.CheckResult.ModeMissing"));
+    }
+    if (externalEnvironmentEnabled && StringUtils.isBlank(graalPyVenvPath)) {
+      throw new HopTransformException(
+          BaseMessages.getString(PKG, "GraalPyTransformMeta.Exception.VenvPathMissing"));
     }
     if (outputFields == null || outputFields.isEmpty()) {
       throw new HopTransformException(
@@ -207,6 +217,22 @@ public class GraalPyTransformMeta extends BaseTransformMeta<GraalPyTransform, Gr
 
   public GraalPyExecutionMode getExecutionModeEnum() {
     return GraalPyExecutionMode.fromCode(executionMode);
+  }
+
+  public boolean isExternalEnvironmentEnabled() {
+    return externalEnvironmentEnabled;
+  }
+
+  public void setExternalEnvironmentEnabled(boolean externalEnvironmentEnabled) {
+    this.externalEnvironmentEnabled = externalEnvironmentEnabled;
+  }
+
+  public String getGraalPyVenvPath() {
+    return graalPyVenvPath;
+  }
+
+  public void setGraalPyVenvPath(String graalPyVenvPath) {
+    this.graalPyVenvPath = graalPyVenvPath;
   }
 
   public List<GraalPyOutputField> getOutputFields() {

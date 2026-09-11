@@ -41,7 +41,11 @@ public class GraalPyTransform extends BaseTransform<GraalPyTransformMeta, GraalP
 
     try {
       meta.validate(null);
-      data.context = withPluginClassLoader(this::createContext);
+      data.externalEnvironment =
+          GraalPyExternalEnvironment.resolve(
+              meta.isExternalEnvironmentEnabled(), resolve(meta.getGraalPyVenvPath()));
+      data.context = withPluginClassLoader(() -> createContext(data.externalEnvironment));
+      initializeExternalEnvironment();
       data.typeBridge = new HopPythonTypeBridge(data.context);
       loadScript();
       logDetailed(
@@ -55,6 +59,24 @@ public class GraalPyTransform extends BaseTransform<GraalPyTransformMeta, GraalP
       logError(e.getMessage(), e);
       return false;
     }
+  }
+
+  private void initializeExternalEnvironment() throws HopException {
+    if (data.externalEnvironment == null || !data.externalEnvironment.enabled()) {
+      return;
+    }
+
+    withPluginClassLoader(
+        () -> {
+          data.context.eval("python", "import site");
+          return null;
+        });
+    logBasic(
+        BaseMessages.getString(
+            PKG,
+            "GraalPyTransform.Log.ExternalEnvironmentEnabled",
+            data.externalEnvironment.venvPath(),
+            data.externalEnvironment.executablePath()));
   }
 
   @Override
@@ -170,7 +192,7 @@ public class GraalPyTransform extends BaseTransform<GraalPyTransformMeta, GraalP
   }
 
   private void loadScript() throws HopException {
-    if (org.apache.commons.lang.StringUtils.isBlank(meta.getScriptText())) {
+    if (org.apache.commons.lang3.StringUtils.isBlank(meta.getScriptText())) {
       throw new HopTransformException(
           BaseMessages.getString(PKG, "GraalPyTransform.Exception.EmptyScript"));
     }
@@ -191,19 +213,28 @@ public class GraalPyTransform extends BaseTransform<GraalPyTransformMeta, GraalP
     }
   }
 
-  private Context createContext() {
+  private Context createContext(GraalPyExternalEnvironment externalEnvironment) {
     HostAccess hostAccess = HostAccess.newBuilder(HostAccess.EXPLICIT).build();
-    return Context.newBuilder("python")
+    Context.Builder builder =
+        Context.newBuilder("python")
         .allowHostAccess(hostAccess)
         .allowHostClassLookup(className -> false)
-        .allowIO(IOAccess.NONE)
         .allowEnvironmentAccess(EnvironmentAccess.NONE)
         .allowCreateProcess(false)
         .allowCreateThread(false)
-        .allowNativeAccess(false)
         .allowPolyglotAccess(PolyglotAccess.NONE)
-        .option("engine.WarnInterpreterOnly", "false")
-        .build();
+        .option("engine.WarnInterpreterOnly", "false");
+
+    if (externalEnvironment != null && externalEnvironment.enabled()) {
+      builder
+          .allowIO(IOAccess.ALL)
+          .allowNativeAccess(true)
+          .option("python.Executable", externalEnvironment.executablePath().toString());
+    } else {
+      builder.allowIO(IOAccess.NONE).allowNativeAccess(false);
+    }
+
+    return builder.build();
   }
 
   private <T> T withPluginClassLoader(CheckedSupplier<T> supplier) throws HopException {

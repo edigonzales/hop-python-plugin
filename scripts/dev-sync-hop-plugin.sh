@@ -29,7 +29,7 @@ cd "${REPO_ROOT}"
 PLUGIN_DIR="${HOP_HOME}/plugins/transforms/graalpy"
 ZIP_PATH="assemblies/assemblies-transform-graalpy/target/hop-transform-graalpy-0.1.0-SNAPSHOT.zip"
 
-mvn -q -DskipTests package
+mvn -U -B -ntp -q -DskipTests package
 
 if [[ ! -f "${ZIP_PATH}" ]]; then
   echo "Plugin ZIP not found: ${ZIP_PATH}"

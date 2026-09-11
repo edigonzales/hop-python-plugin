@@ -1,0 +1,29 @@
+name: Verify GraalPy plugin
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    uses: edigonzales/hop-plugin-ci/.github/workflows/plugin-verify.yml@main
+    with:
+      ci-ref: main
+      java-versions: '["21", "25"]'
+      runner-os: '["ubuntu-latest", "macos-15", "windows-latest"]'
+      canonical-runner-os: ubuntu-latest
+      canonical-java-version: '21'
+      maven-working-directory: .
+      maven-options: -U -B -ntp
+      maven-goals: clean verify
+      compatibility-goals: clean test
+      pom-file: pom.xml
+      zip-descriptors: >-
+        [{"artifactId":"hop-transform-graalpy","zipGlob":"assemblies/assemblies-transform-graalpy/target/hop-transform-graalpy-*.zip","pluginRoot":"plugins/transforms/graalpy"}]
+      validation-commands: '["python3 scripts/verify-package.py"]'
+      artifact-name-prefix: hop-python-plugin
+      group-id: ch.so.agi
+      hop-version: 2.19.0
+    secrets: inherit

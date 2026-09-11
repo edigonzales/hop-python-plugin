@@ -34,6 +34,8 @@ class GraalPyTransformMetaTest {
             + "    ctx.log.info('hello')\n"
             + "    return {'value': row['value'], 'extra': 'x'}\n");
     meta.setExecutionMode(GraalPyExecutionMode.EMIT_MANY.getCode());
+    meta.setExternalEnvironmentEnabled(true);
+    meta.setGraalPyVenvPath("${GRAALPY_VENV}");
     meta.setOutputFields(
         List.of(
             field("value", "Integer", -1, -1, true),
@@ -46,6 +48,8 @@ class GraalPyTransformMetaTest {
 
     assertEquals(meta.getScriptText(), copy.getScriptText());
     assertEquals(meta.getExecutionMode(), copy.getExecutionMode());
+    assertEquals(meta.isExternalEnvironmentEnabled(), copy.isExternalEnvironmentEnabled());
+    assertEquals(meta.getGraalPyVenvPath(), copy.getGraalPyVenvPath());
     assertEquals(meta.getOutputFields().size(), copy.getOutputFields().size());
     assertEquals("value", copy.getOutputFields().get(0).getName());
     assertEquals("Integer", copy.getOutputFields().get(0).getType());
@@ -95,6 +99,16 @@ class GraalPyTransformMetaTest {
     inputRowMeta.addValueMeta(new ValueMetaString("name"));
 
     assertThrows(HopTransformException.class, () -> meta.validate(inputRowMeta));
+  }
+
+  @Test
+  void validateRejectsMissingVenvPathWhenExternalEnvironmentIsEnabled() {
+    GraalPyTransformMeta meta = new GraalPyTransformMeta();
+    meta.setExternalEnvironmentEnabled(true);
+    meta.setGraalPyVenvPath("");
+    meta.setOutputFields(List.of(field("value", "String", -1, -1, false)));
+
+    assertThrows(HopTransformException.class, () -> meta.validate(new RowMeta()));
   }
 
   private static GraalPyOutputField field(

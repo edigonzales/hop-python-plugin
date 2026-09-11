@@ -15,4 +15,5 @@ public class GraalPyTransformData extends BaseTransformData implements ITransfor
   public HopPythonTypeBridge typeBridge;
   public OutputRowAssembler outputRowAssembler;
   public PyContextFacade pyContext;
+  public GraalPyExternalEnvironment externalEnvironment;
 }

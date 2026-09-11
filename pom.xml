@@ -18,16 +18,17 @@
 
   <properties>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-    <maven.compiler.release>17</maven.compiler.release>
-    <hop.version>2.17.0</hop.version>
-    <graalpy.version>25.0.2</graalpy.version>
+    <maven.compiler.release>21</maven.compiler.release>
+    <hop.version>2.19.0</hop.version>
+    <graalpy.version>25.3.4.1</graalpy.version>
     <jandex.version>3.2.2</jandex.version>
     <junit.version>5.10.2</junit.version>
-    <mockito.version>5.12.0</mockito.version>
+    <mockito.version>5.23.0</mockito.version>
     <maven.compiler.version>3.13.0</maven.compiler.version>
     <maven.surefire.version>3.2.5</maven.surefire.version>
     <maven.assembly.version>3.7.1</maven.assembly.version>
     <maven.jar.version>3.4.2</maven.jar.version>
+    <maven.surefire.argLine></maven.surefire.argLine>
   </properties>
 
   <dependencyManagement>
@@ -71,7 +72,28 @@
       <id>central</id>
       <url>https://repo1.maven.org/maven2/</url>
     </repository>
+    <repository>
+      <id>sogeo-snapshots</id>
+      <url>https://jars.interlis.guru/snapshots/</url>
+      <releases>
+        <enabled>false</enabled>
+      </releases>
+      <snapshots>
+        <enabled>true</enabled>
+      </snapshots>
+    </repository>
   </repositories>
+
+  <distributionManagement>
+    <snapshotRepository>
+      <id>sogeo-snapshots</id>
+      <url>https://jars.interlis.guru/snapshots/</url>
+    </snapshotRepository>
+    <repository>
+      <id>sogeo-releases</id>
+      <url>https://jars.interlis.guru/releases/</url>
+    </repository>
+  </distributionManagement>
 
   <build>
     <pluginManagement>
@@ -98,4 +120,18 @@
       </plugins>
     </pluginManagement>
   </build>
+
+  <profiles>
+    <profile>
+      <id>macos-swt</id>
+      <activation>
+        <os>
+          <family>mac</family>
+        </os>
+      </activation>
+      <properties>
+        <maven.surefire.argLine>-XstartOnFirstThread</maven.surefire.argLine>
+      </properties>
+    </profile>
+  </profiles>
 </project>
