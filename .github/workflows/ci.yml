@@ -65,8 +65,9 @@ jobs:
       - name: Download geometry install bundle
         shell: bash
         run: >-
-          mvn -B -ntp org.apache.maven.plugins:maven-dependency-plugin:3.8.1:copy
+          mvn -B -ntp -N org.apache.maven.plugins:maven-dependency-plugin:3.8.1:copy
           -Dartifact=ch.so.agi:hop-geometry-type-plugin:0.2.0-SNAPSHOT:zip
+          -Dmdep.useBaseVersion=true
           -DoutputDirectory=.ci/geometry
 
       - name: Verify installed geometry handoff
