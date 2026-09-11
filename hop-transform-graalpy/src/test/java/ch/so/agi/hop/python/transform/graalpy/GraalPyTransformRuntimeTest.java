@@ -7,14 +7,13 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.io.ByteArrayOutputStream;
 import java.math.BigDecimal;
-import java.nio.file.Path;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
-import java.io.ByteArrayOutputStream;
 import org.apache.hop.core.BlockingRowSet;
 import org.apache.hop.core.HopEnvironment;
 import org.apache.hop.core.exception.HopTransformException;
@@ -214,8 +213,7 @@ class GraalPyTransformRuntimeTest {
     inputRowMeta.addValueMeta(new ValueMetaString("name"));
 
     try (Harness harness = harness(meta, inputRowMeta, row("value"))) {
-      HopTransformException exception =
-          assertThrows(HopTransformException.class, harness::execute);
+      HopTransformException exception = assertThrows(HopTransformException.class, harness::execute);
       assertTrue(exception.getMessage().contains("stop now"));
     }
   }
@@ -249,7 +247,8 @@ class GraalPyTransformRuntimeTest {
   @Test
   void typeBridgeRoundTripsSupportedTypes() throws Exception {
     Date timestamp = new Date(1_710_000_123_000L);
-    Date midnight = Date.from(LocalDate.of(2024, 1, 2).atStartOfDay(ZoneId.systemDefault()).toInstant());
+    Date midnight =
+        Date.from(LocalDate.of(2024, 1, 2).atStartOfDay(ZoneId.systemDefault()).toInstant());
     GraalPyTransformMeta meta =
         meta(
             """
@@ -284,7 +283,8 @@ class GraalPyTransformRuntimeTest {
     inputRowMeta.addValueMeta(new ValueMetaDate("created_at"));
 
     try (Harness harness =
-        harness(meta, inputRowMeta, row("abc", 7L, 1.25D, new BigDecimal("99.01"), true, timestamp))) {
+        harness(
+            meta, inputRowMeta, row("abc", 7L, 1.25D, new BigDecimal("99.01"), true, timestamp))) {
       List<Object[]> rows = harness.execute();
 
       assertEquals(1, rows.size());
@@ -356,9 +356,9 @@ class GraalPyTransformRuntimeTest {
 
     try (Harness first = harness(meta.clone(), inputRowMeta, row("a"));
         Harness second = harness(meta.clone(), inputRowMeta, row("b"))) {
-      assertNotNull(first.data.context);
-      assertNotNull(second.data.context);
-      assertNotSame(first.data.context, second.data.context);
+      assertNotNull(first.data.session);
+      assertNotNull(second.data.session);
+      assertNotSame(first.data.session, second.data.session);
     }
   }
 
@@ -408,6 +408,7 @@ class GraalPyTransformRuntimeTest {
             field("module", "String", -1, -1, false));
     meta.setExternalEnvironmentEnabled(true);
     meta.setGraalPyVenvPath(venv);
+    meta.setNativeAccessEnabled(true);
 
     RowMeta inputRowMeta = new RowMeta();
     inputRowMeta.addValueMeta(new ValueMetaString("package"));
@@ -471,12 +472,16 @@ class GraalPyTransformRuntimeTest {
         throws Exception {
       helper =
           new TransformMockHelper<>(
-              "GraalPyTransformRuntimeTest", GraalPyTransformMeta.class, GraalPyTransformData.class);
+              "GraalPyTransformRuntimeTest",
+              GraalPyTransformMeta.class,
+              GraalPyTransformData.class);
       logBuffer = new ByteArrayOutputStream();
       helper.redirectLog(logBuffer, LogLevel.BASIC);
       helper.pipeline.setRunning(true);
       data = new GraalPyTransformData();
-      transform = new GraalPyTransform(helper.transformMeta, meta, data, 0, helper.pipelineMeta, helper.pipeline);
+      transform =
+          new GraalPyTransform(
+              helper.transformMeta, meta, data, 0, helper.pipelineMeta, helper.pipeline);
       transform.setInputRowMeta(inputRowMeta);
       transform.setInputRowSets(new ArrayList<>(List.of(helper.getMockInputRowSet(rows))));
       assertTrue(transform.init(), logBuffer.toString());

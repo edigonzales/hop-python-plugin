@@ -1,597 +1,387 @@
 package ch.so.agi.hop.python.transform.graalpy;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import org.apache.hop.core.Const;
-import org.apache.hop.core.Props;
-import org.apache.hop.core.util.Utils;
+import java.nio.file.*;
+import java.util.*;
 import org.apache.hop.core.variables.IVariables;
-import org.apache.hop.i18n.BaseMessages;
 import org.apache.hop.pipeline.PipelineMeta;
 import org.apache.hop.pipeline.transform.ITransformMeta;
-import org.apache.hop.ui.core.PropsUi;
 import org.apache.hop.ui.core.dialog.BaseDialog;
 import org.apache.hop.ui.core.dialog.ErrorDialog;
-import org.apache.hop.ui.core.widget.ColumnInfo;
-import org.apache.hop.ui.core.widget.ScriptStyledTextComp;
-import org.apache.hop.ui.core.widget.TableView;
-import org.apache.hop.ui.core.widget.TextVar;
+import org.apache.hop.ui.core.widget.*;
 import org.apache.hop.ui.pipeline.transform.BaseTransformDialog;
 import org.eclipse.swt.SWT;
-import org.eclipse.swt.custom.CCombo;
-import org.eclipse.swt.custom.SashForm;
-import org.eclipse.swt.events.ModifyListener;
-import org.eclipse.swt.layout.FormAttachment;
-import org.eclipse.swt.layout.FormData;
-import org.eclipse.swt.layout.FormLayout;
-import org.eclipse.swt.layout.RowLayout;
-import org.eclipse.swt.widgets.Button;
-import org.eclipse.swt.widgets.Composite;
-import org.eclipse.swt.widgets.DirectoryDialog;
-import org.eclipse.swt.widgets.FileDialog;
-import org.eclipse.swt.widgets.Label;
-import org.eclipse.swt.widgets.MessageBox;
-import org.eclipse.swt.widgets.Shell;
-import org.eclipse.swt.widgets.TableItem;
+import org.eclipse.swt.layout.*;
+import org.eclipse.swt.widgets.*;
 
 public class GraalPyTransformDialog extends BaseTransformDialog {
-  private static final Class<?> PKG = GraalPyTransformDialog.class;
-  private static final String[] YES_NO_COMBO =
-      new String[] {
-        BaseMessages.getString(PKG, "System.Combo.No"),
-        BaseMessages.getString(PKG, "System.Combo.Yes")
-      };
-
   private final GraalPyTransformMeta input;
-
-  private CCombo wMode;
-  private Button wExternalEnvironmentEnabled;
-  private TextVar wGraalPyVenvPath;
-  private Button wBrowseGraalPyVenvPath;
-  private Label wlExternalEnvironmentWarning;
-  private ScriptStyledTextComp wScript;
-  private Button wLoadScript;
-  private Button wSaveScript;
-  private Button wSaveAsScript;
-  private TableView wFields;
-  private ModifyListener lsMod;
-  private int middle;
-  private int margin;
-  private boolean loading;
-  private Path currentScriptFile;
+  private Text name;
+  private Combo mode, source, selection;
+  private TextVar scriptPath, venv;
+  private Text timeout, outputLimit, logLimit;
+  private Button external, nativeAccess;
+  private ScriptStyledTextComp script;
+  private TableView fields, inputs, parameters;
+  private Path editorFile;
+  private Button save;
 
   public GraalPyTransformDialog(
-      Shell parent,
-      IVariables variables,
-      GraalPyTransformMeta transformMeta,
-      PipelineMeta pipelineMeta) {
-    super(parent, variables, transformMeta, pipelineMeta);
-    input = transformMeta;
+      Shell parent, IVariables variables, GraalPyTransformMeta meta, PipelineMeta pipeline) {
+    super(parent, variables, meta, pipeline);
+    input = meta;
   }
 
   public GraalPyTransformDialog(
-      Shell parent,
-      IVariables variables,
-      Object transformMeta,
-      PipelineMeta pipelineMeta,
-      String transformName) {
-    this(parent, variables, castTransformMeta(transformMeta), pipelineMeta, transformName);
+      Shell parent, IVariables variables, Object meta, PipelineMeta pipeline, String name) {
+    this(parent, variables, (ITransformMeta) meta, pipeline, name);
   }
 
   public GraalPyTransformDialog(
-      Shell parent,
-      IVariables variables,
-      ITransformMeta transformMeta,
-      PipelineMeta pipelineMeta,
-      String transformName) {
-    super(parent, variables, transformMeta, pipelineMeta, transformName);
-    input = castTransformMeta(transformMeta);
-  }
-
-  private static GraalPyTransformMeta castTransformMeta(Object transformMeta) {
-    if (transformMeta instanceof GraalPyTransformMeta graalPyTransformMeta) {
-      return graalPyTransformMeta;
-    }
-    throw new IllegalArgumentException(
-        "Expected GraalPyTransformMeta but got "
-            + (transformMeta == null ? "null" : transformMeta.getClass().getName()));
+      Shell parent, IVariables variables, ITransformMeta meta, PipelineMeta pipeline, String name) {
+    super(parent, variables, meta, pipeline, name);
+    input = (GraalPyTransformMeta) meta;
   }
 
   @Override
   public String open() {
-    Shell parent = getParent();
-    shell = new Shell(parent, SWT.DIALOG_TRIM | SWT.RESIZE | SWT.MAX | SWT.MIN);
-    PropsUi.setLook(shell);
+    shell = new Shell(getParent(), SWT.DIALOG_TRIM | SWT.RESIZE | SWT.MAX | SWT.MIN);
+    shell.setText("GraalPy");
     setShellImage(shell, input);
-    shell.setText(BaseMessages.getString(PKG, "GraalPyTransformDialog.Title"));
-
-    middle = props.getMiddlePct();
-    margin = PropsUi.getMargin();
-
-    FormLayout formLayout = new FormLayout();
-    formLayout.marginWidth = margin;
-    formLayout.marginHeight = margin;
-    shell.setLayout(formLayout);
-
-    lsMod =
-        e -> {
-          if (!loading) {
-            input.setChanged();
-          }
-        };
-    changed = input.hasChanged();
-
-    wlTransformName = new Label(shell, SWT.RIGHT);
-    wlTransformName.setText(BaseMessages.getString(PKG, "System.Label.TransformName"));
-    PropsUi.setLook(wlTransformName);
-    fdlTransformName = new FormData();
-    fdlTransformName.left = new FormAttachment(0, 0);
-    fdlTransformName.top = new FormAttachment(0, 0);
-    fdlTransformName.right = new FormAttachment(middle, -margin);
-    wlTransformName.setLayoutData(fdlTransformName);
-
-    wTransformName = new org.eclipse.swt.widgets.Text(shell, SWT.SINGLE | SWT.LEFT | SWT.BORDER);
-    PropsUi.setLook(wTransformName);
-    wTransformName.addModifyListener(lsMod);
-    fdTransformName = new FormData();
-    fdTransformName.left = new FormAttachment(middle, 0);
-    fdTransformName.top = new FormAttachment(0, 0);
-    fdTransformName.right = new FormAttachment(100, 0);
-    wTransformName.setLayoutData(fdTransformName);
-
-    Label wlMode = new Label(shell, SWT.RIGHT);
-    wlMode.setText(BaseMessages.getString(PKG, "GraalPyTransformDialog.Mode.Label"));
-    wlMode.setToolTipText(BaseMessages.getString(PKG, "GraalPyTransformDialog.Mode.Tooltip"));
-    PropsUi.setLook(wlMode);
-    FormData fdlMode = new FormData();
-    fdlMode.left = new FormAttachment(0, 0);
-    fdlMode.right = new FormAttachment(middle, -margin);
-    fdlMode.top = new FormAttachment(wTransformName, margin);
-    wlMode.setLayoutData(fdlMode);
-
-    wMode = new CCombo(shell, SWT.BORDER | SWT.READ_ONLY);
-    wMode.setItems(
-        new String[] {
-          BaseMessages.getString(PKG, "GraalPyTransformDialog.Mode.ReturnOne"),
-          BaseMessages.getString(PKG, "GraalPyTransformDialog.Mode.EmitMany")
+    shell.setLayout(new GridLayout(2, false));
+    label(shell, "Transform name");
+    name = text(shell, Objects.toString(transformName, ""));
+    label(shell, "Execution mode");
+    mode = combo(shell, new String[] {"RETURN_ONE", "EMIT_MANY"}, input.getExecutionMode());
+    TabFolder tabs = new TabFolder(shell, SWT.NONE);
+    tabs.setLayoutData(new GridData(SWT.FILL, SWT.FILL, true, true, 2, 1));
+    Composite scriptPage = page(tabs, "Script", 2);
+    label(scriptPage, "Source");
+    source = combo(scriptPage, new String[] {"INLINE", "FILE"}, input.getScriptSource());
+    label(scriptPage, "Runtime script file");
+    Composite fileLine = new Composite(scriptPage, SWT.NONE);
+    fileLine.setLayout(new GridLayout(2, false));
+    fill(fileLine);
+    scriptPath = new TextVar(variables, fileLine, SWT.BORDER);
+    fill(scriptPath);
+    scriptPath.setText(input.getScriptPath());
+    button(
+        fileLine,
+        "Browse…",
+        () -> {
+          String path = chooseFile(SWT.OPEN);
+          if (path != null) scriptPath.setText(path);
         });
-    wMode.setToolTipText(BaseMessages.getString(PKG, "GraalPyTransformDialog.Mode.Tooltip"));
-    PropsUi.setLook(wMode);
-    wMode.addModifyListener(lsMod);
-    FormData fdMode = new FormData();
-    fdMode.left = new FormAttachment(middle, 0);
-    fdMode.top = new FormAttachment(wTransformName, margin);
-    fdMode.right = new FormAttachment(100, 0);
-    wMode.setLayoutData(fdMode);
+    Label hint =
+        label(
+            scriptPage,
+            "FILE is loaded once per run. Relative paths use ${PROJECT_HOME}.\n"
+                + "The editor below is the persisted INLINE script; Load/Save only import or export"
+                + " editor contents.");
+    hint.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false, 2, 1));
+    Composite fileButtons = new Composite(scriptPage, SWT.NONE);
+    fileButtons.setLayout(new RowLayout());
+    fileButtons.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false, 2, 1));
+    button(fileButtons, "Load…", this::loadFile);
+    save = button(fileButtons, "Save", () -> saveFile(false));
+    save.setEnabled(false);
+    button(fileButtons, "Save as…", () -> saveFile(true));
+    script =
+        new ScriptStyledTextComp(
+            variables, scriptPage, SWT.MULTI | SWT.BORDER | SWT.H_SCROLL | SWT.V_SCROLL, false);
+    script.addLineStyleListener(new PythonCodeHighlight());
+    script.setText(input.getScriptText());
+    script.setLayoutData(new GridData(SWT.FILL, SWT.FILL, true, true, 2, 1));
+    source.addListener(SWT.Selection, e -> updateSource());
+    updateSource();
 
-    Label wlExternalEnvironment = new Label(shell, SWT.RIGHT);
-    wlExternalEnvironment.setText(
-        BaseMessages.getString(PKG, "GraalPyTransformDialog.ExternalEnvironment.Label"));
-    wlExternalEnvironment.setToolTipText(
-        BaseMessages.getString(PKG, "GraalPyTransformDialog.ExternalEnvironment.Tooltip"));
-    PropsUi.setLook(wlExternalEnvironment);
-    FormData fdlExternalEnvironment = new FormData();
-    fdlExternalEnvironment.left = new FormAttachment(0, 0);
-    fdlExternalEnvironment.right = new FormAttachment(middle, -margin);
-    fdlExternalEnvironment.top = new FormAttachment(wMode, margin);
-    wlExternalEnvironment.setLayoutData(fdlExternalEnvironment);
+    Composite inputPage = page(tabs, "Inputs / Parameters", 2);
+    label(inputPage, "Fields visible to Python");
+    selection = combo(inputPage, new String[] {"ALL", "SELECTED"}, input.getInputMode());
+    inputs = table(inputPage, new ColumnInfo[] {column("Input field")}, 4);
+    inputs.setLayoutData(new GridData(SWT.FILL, SWT.FILL, true, true, 2, 1));
+    input.getSelectedInputs().forEach(f -> inputs.add(f.getName()));
+    selection.addListener(
+        SWT.Selection, e -> inputs.setEnabled("SELECTED".equals(selection.getText())));
+    inputs.setEnabled("SELECTED".equals(selection.getText()));
+    Label pHint =
+        label(inputPage, "Parameters are strings; Hop variables are resolved once at startup.");
+    pHint.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false, 2, 1));
+    parameters = table(inputPage, new ColumnInfo[] {column("Name"), column("Value")}, 4);
+    parameters.setLayoutData(new GridData(SWT.FILL, SWT.FILL, true, true, 2, 1));
+    input
+        .getParameters()
+        .forEach(p -> parameters.add(p.getName(), Objects.toString(p.getValue(), "")));
 
-    wExternalEnvironmentEnabled = new Button(shell, SWT.CHECK);
-    wExternalEnvironmentEnabled.setText(
-        BaseMessages.getString(PKG, "GraalPyTransformDialog.ExternalEnvironment.Enable"));
-    wExternalEnvironmentEnabled.setToolTipText(
-        BaseMessages.getString(PKG, "GraalPyTransformDialog.ExternalEnvironment.Tooltip"));
-    PropsUi.setLook(wExternalEnvironmentEnabled);
-    wExternalEnvironmentEnabled.addListener(
+    Composite outputPage = page(tabs, "Output fields", 1);
+    label(
+        outputPage,
+        "Declare only new or changed fields. return {} passes a row through; return None filters"
+            + " it.");
+    fields =
+        table(
+            outputPage,
+            new ColumnInfo[] {
+              column("Name"),
+              choice("Type", GraalPyOutputField.supportedTypeNames()),
+              column("Length"),
+              column("Precision"),
+              choice("Replace existing", new String[] {"No", "Yes"})
+            },
+            5);
+    fields.setLayoutData(new GridData(SWT.FILL, SWT.FILL, true, true));
+    input
+        .getOutputFields()
+        .forEach(
+            f ->
+                fields.add(
+                    f.getName(),
+                    f.getType(),
+                    number(f.getLength()),
+                    number(f.getPrecision()),
+                    f.isReplaceExisting() ? "Yes" : "No"));
+
+    Composite environment = page(tabs, "Environment / Limits", 2);
+    label(environment, "External GraalPy environment");
+    external = check(environment, input.isExternalEnvironmentEnabled());
+    label(environment, "GraalPy venv path");
+    Composite venvLine = new Composite(environment, SWT.NONE);
+    venvLine.setLayout(new GridLayout(2, false));
+    fill(venvLine);
+    venv = new TextVar(variables, venvLine, SWT.BORDER);
+    venv.setText(input.getGraalPyVenvPath());
+    fill(venv);
+    button(
+        venvLine,
+        "Browse…",
+        () -> {
+          String path = new DirectoryDialog(shell).open();
+          if (path != null) venv.setText(path);
+        });
+    label(environment, "Native access (experimental)");
+    nativeAccess = check(environment, input.isNativeAccessEnabled());
+    Label warning =
+        label(
+            environment,
+            "External environments have filesystem/network I/O access. Native code is trusted and"
+                + " unrestricted.\n"
+                + "Use a GraalPy "
+                + GraalPyExternalEnvironment.EXPECTED_VERSION
+                + " venv; install packages outside Hop.");
+    warning.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false, 2, 1));
+    label(environment, "Seconds per phase / input (0 = unlimited)");
+    timeout = text(environment, "" + input.getExecutionTimeoutSeconds());
+    label(environment, "Emitted rows per input (0 = unlimited)");
+    outputLimit = text(environment, "" + input.getMaxEmittedRows());
+    label(environment, "Log bytes per session (0 = unlimited)");
+    logLimit = text(environment, "" + input.getMaxLogBytes());
+    external.addListener(
         SWT.Selection,
         e -> {
-          if (!loading) {
-            input.setChanged();
-          }
-          updateExternalEnvironmentControls();
+          venv.setEnabled(external.getSelection());
+          nativeAccess.setEnabled(external.getSelection());
         });
-    FormData fdExternalEnvironment = new FormData();
-    fdExternalEnvironment.left = new FormAttachment(middle, 0);
-    fdExternalEnvironment.top = new FormAttachment(wMode, margin);
-    fdExternalEnvironment.right = new FormAttachment(100, 0);
-    wExternalEnvironmentEnabled.setLayoutData(fdExternalEnvironment);
+    venv.setEnabled(external.getSelection());
+    nativeAccess.setEnabled(external.getSelection());
 
-    Label wlGraalPyVenvPath = new Label(shell, SWT.RIGHT);
-    wlGraalPyVenvPath.setText(BaseMessages.getString(PKG, "GraalPyTransformDialog.VenvPath.Label"));
-    wlGraalPyVenvPath.setToolTipText(
-        BaseMessages.getString(PKG, "GraalPyTransformDialog.VenvPath.Tooltip"));
-    PropsUi.setLook(wlGraalPyVenvPath);
-    FormData fdlGraalPyVenvPath = new FormData();
-    fdlGraalPyVenvPath.left = new FormAttachment(0, 0);
-    fdlGraalPyVenvPath.right = new FormAttachment(middle, -margin);
-    fdlGraalPyVenvPath.top = new FormAttachment(wExternalEnvironmentEnabled, margin);
-    wlGraalPyVenvPath.setLayoutData(fdlGraalPyVenvPath);
-
-    wBrowseGraalPyVenvPath = new Button(shell, SWT.PUSH);
-    wBrowseGraalPyVenvPath.setText(BaseMessages.getString(PKG, "System.Button.Browse"));
-    PropsUi.setLook(wBrowseGraalPyVenvPath);
-    FormData fdBrowseGraalPyVenvPath = new FormData();
-    fdBrowseGraalPyVenvPath.right = new FormAttachment(100, 0);
-    fdBrowseGraalPyVenvPath.top = new FormAttachment(wExternalEnvironmentEnabled, margin);
-    wBrowseGraalPyVenvPath.setLayoutData(fdBrowseGraalPyVenvPath);
-
-    wGraalPyVenvPath = new TextVar(variables, shell, SWT.SINGLE | SWT.LEFT | SWT.BORDER);
-    wGraalPyVenvPath.setToolTipText(BaseMessages.getString(PKG, "GraalPyTransformDialog.VenvPath.Tooltip"));
-    PropsUi.setLook(wGraalPyVenvPath);
-    wGraalPyVenvPath.addModifyListener(lsMod);
-    FormData fdGraalPyVenvPath = new FormData();
-    fdGraalPyVenvPath.left = new FormAttachment(middle, 0);
-    fdGraalPyVenvPath.top = new FormAttachment(wExternalEnvironmentEnabled, margin);
-    fdGraalPyVenvPath.right = new FormAttachment(wBrowseGraalPyVenvPath, -margin);
-    wGraalPyVenvPath.setLayoutData(fdGraalPyVenvPath);
-
-    wlExternalEnvironmentWarning = new Label(shell, SWT.WRAP);
-    wlExternalEnvironmentWarning.setText(
-        BaseMessages.getString(PKG, "GraalPyTransformDialog.ExternalEnvironment.Warning"));
-    PropsUi.setLook(wlExternalEnvironmentWarning);
-    FormData fdlExternalEnvironmentWarning = new FormData();
-    fdlExternalEnvironmentWarning.left = new FormAttachment(middle, 0);
-    fdlExternalEnvironmentWarning.top = new FormAttachment(wGraalPyVenvPath, margin);
-    fdlExternalEnvironmentWarning.right = new FormAttachment(100, 0);
-    wlExternalEnvironmentWarning.setLayoutData(fdlExternalEnvironmentWarning);
-
-    Label wlHelp = new Label(shell, SWT.WRAP);
-    wlHelp.setText(BaseMessages.getString(PKG, "GraalPyTransformDialog.Help.Label"));
-    PropsUi.setLook(wlHelp);
-    FormData fdlHelp = new FormData();
-    fdlHelp.left = new FormAttachment(0, 0);
-    fdlHelp.top = new FormAttachment(wlExternalEnvironmentWarning, margin);
-    fdlHelp.right = new FormAttachment(100, 0);
-    wlHelp.setLayoutData(fdlHelp);
-
-    SashForm sashForm = new SashForm(shell, SWT.VERTICAL);
-    PropsUi.setLook(sashForm);
-    FormData fdSash = new FormData();
-    fdSash.left = new FormAttachment(0, 0);
-    fdSash.top = new FormAttachment(wlHelp, margin);
-    fdSash.right = new FormAttachment(100, 0);
-    sashForm.setLayoutData(fdSash);
-
-    Composite wScriptComp = new Composite(sashForm, SWT.NONE);
-    PropsUi.setLook(wScriptComp);
-    wScriptComp.setLayout(props.createFormLayout());
-
-    Composite wScriptHeader = new Composite(wScriptComp, SWT.NONE);
-    PropsUi.setLook(wScriptHeader);
-    FormLayout scriptHeaderLayout = new FormLayout();
-    scriptHeaderLayout.marginWidth = 0;
-    scriptHeaderLayout.marginHeight = 0;
-    wScriptHeader.setLayout(scriptHeaderLayout);
-    FormData fdScriptHeader = new FormData();
-    fdScriptHeader.left = new FormAttachment(0, 0);
-    fdScriptHeader.top = new FormAttachment(0, 0);
-    fdScriptHeader.right = new FormAttachment(100, 0);
-    wScriptHeader.setLayoutData(fdScriptHeader);
-
-    Composite wScriptButtons = new Composite(wScriptHeader, SWT.NONE);
-    PropsUi.setLook(wScriptButtons);
-    RowLayout scriptButtonLayout = new RowLayout();
-    scriptButtonLayout.marginBottom = 0;
-    scriptButtonLayout.marginLeft = 0;
-    scriptButtonLayout.marginRight = 0;
-    scriptButtonLayout.marginTop = 0;
-    scriptButtonLayout.spacing = margin;
-    wScriptButtons.setLayout(scriptButtonLayout);
-    FormData fdScriptButtons = new FormData();
-    fdScriptButtons.right = new FormAttachment(100, 0);
-    fdScriptButtons.top = new FormAttachment(0, 0);
-    wScriptButtons.setLayoutData(fdScriptButtons);
-
-    wLoadScript = new Button(wScriptButtons, SWT.PUSH);
-    wLoadScript.setText(BaseMessages.getString(PKG, "GraalPyTransformDialog.Script.Load"));
-    PropsUi.setLook(wLoadScript);
-
-    wSaveScript = new Button(wScriptButtons, SWT.PUSH);
-    wSaveScript.setText(BaseMessages.getString(PKG, "GraalPyTransformDialog.Script.Save"));
-    PropsUi.setLook(wSaveScript);
-
-    wSaveAsScript = new Button(wScriptButtons, SWT.PUSH);
-    wSaveAsScript.setText(BaseMessages.getString(PKG, "GraalPyTransformDialog.Script.SaveAs"));
-    PropsUi.setLook(wSaveAsScript);
-
-    Label wlScript = new Label(wScriptHeader, SWT.NONE);
-    wlScript.setText(BaseMessages.getString(PKG, "GraalPyTransformDialog.Script.Label"));
-    wlScript.setToolTipText(BaseMessages.getString(PKG, "GraalPyTransformDialog.Script.Tooltip"));
-    PropsUi.setLook(wlScript);
-    FormData fdlScript = new FormData();
-    fdlScript.left = new FormAttachment(0, 0);
-    fdlScript.top = new FormAttachment(0, 0);
-    fdlScript.right = new FormAttachment(wScriptButtons, -margin);
-    wlScript.setLayoutData(fdlScript);
-
-    wScript =
-        new ScriptStyledTextComp(
-            variables,
-            wScriptComp,
-            SWT.MULTI | SWT.LEFT | SWT.BORDER | SWT.H_SCROLL | SWT.V_SCROLL,
-            false);
-    wScript.addLineStyleListener(new PythonCodeHighlight());
-    wScript.setToolTipText(BaseMessages.getString(PKG, "GraalPyTransformDialog.Script.Tooltip"));
-    wScript.addModifyListener(lsMod);
-    PropsUi.setLook(wScript, Props.WIDGET_STYLE_FIXED);
-    FormData fdScript = new FormData();
-    fdScript.left = new FormAttachment(0, 0);
-    fdScript.top = new FormAttachment(wScriptHeader, margin);
-    fdScript.right = new FormAttachment(100, 0);
-    fdScript.bottom = new FormAttachment(100, 0);
-    wScript.setLayoutData(fdScript);
-
-    Composite wFieldsComp = new Composite(sashForm, SWT.NONE);
-    PropsUi.setLook(wFieldsComp);
-    wFieldsComp.setLayout(props.createFormLayout());
-
-    Label wlFields = new Label(wFieldsComp, SWT.NONE);
-    wlFields.setText(BaseMessages.getString(PKG, "GraalPyTransformDialog.Fields.Label"));
-    wlFields.setToolTipText(BaseMessages.getString(PKG, "GraalPyTransformDialog.Fields.Tooltip"));
-    PropsUi.setLook(wlFields);
-    FormData fdlFields = new FormData();
-    fdlFields.left = new FormAttachment(0, 0);
-    fdlFields.top = new FormAttachment(0, 0);
-    wlFields.setLayoutData(fdlFields);
-
-    ColumnInfo[] columns = new ColumnInfo[5];
-    columns[0] =
-        new ColumnInfo(
-            BaseMessages.getString(PKG, "GraalPyTransformDialog.Column.Name"),
-            ColumnInfo.COLUMN_TYPE_TEXT);
-    columns[1] =
-        new ColumnInfo(
-            BaseMessages.getString(PKG, "GraalPyTransformDialog.Column.Type"),
-            ColumnInfo.COLUMN_TYPE_CCOMBO,
-            GraalPyOutputField.supportedTypeNames());
-    columns[2] =
-        new ColumnInfo(
-            BaseMessages.getString(PKG, "GraalPyTransformDialog.Column.Length"),
-            ColumnInfo.COLUMN_TYPE_TEXT);
-    columns[3] =
-        new ColumnInfo(
-            BaseMessages.getString(PKG, "GraalPyTransformDialog.Column.Precision"),
-            ColumnInfo.COLUMN_TYPE_TEXT);
-    columns[4] =
-        new ColumnInfo(
-            BaseMessages.getString(PKG, "GraalPyTransformDialog.Column.Replace"),
-            ColumnInfo.COLUMN_TYPE_CCOMBO,
-            YES_NO_COMBO);
-
-    wFields =
-        new TableView(
-            variables,
-            wFieldsComp,
-            SWT.BORDER | SWT.FULL_SELECTION | SWT.MULTI | SWT.V_SCROLL | SWT.H_SCROLL,
-            columns,
-            Math.max(1, input.getOutputFields().size()),
-            lsMod,
-            props);
-    wFields.setToolTipText(BaseMessages.getString(PKG, "GraalPyTransformDialog.Fields.Tooltip"));
-    FormData fdFields = new FormData();
-    fdFields.left = new FormAttachment(0, 0);
-    fdFields.top = new FormAttachment(wlFields, margin);
-    fdFields.right = new FormAttachment(100, 0);
-    fdFields.bottom = new FormAttachment(100, 0);
-    wFields.setLayoutData(fdFields);
-
-    sashForm.setWeights(new int[] {3, 2});
-
-    loading = true;
-    getData();
-    loading = false;
-    updateExternalEnvironmentControls();
-    updateScriptFileButtons();
-
-    wFields.optWidth(true);
-    wOk = new Button(shell, SWT.PUSH);
-    wOk.setText(BaseMessages.getString(PKG, "System.Button.OK"));
-    wCancel = new Button(shell, SWT.PUSH);
-    wCancel.setText(BaseMessages.getString(PKG, "System.Button.Cancel"));
-    setButtonPositions(new Button[] {wOk, wCancel}, margin, null);
-
-    fdSash.bottom = new FormAttachment(wOk, -margin * 2);
-    setSize(shell, 960, 720, true);
-
-    wLoadScript.addListener(SWT.Selection, e -> loadScriptFromFile());
-    wSaveScript.addListener(SWT.Selection, e -> saveScript(false));
-    wSaveAsScript.addListener(SWT.Selection, e -> saveScript(true));
-    wBrowseGraalPyVenvPath.addListener(SWT.Selection, e -> browseGraalPyVenvPath());
-    wOk.addListener(SWT.Selection, e -> ok());
-    wCancel.addListener(SWT.Selection, e -> cancel());
-    wTransformName.setFocus();
+    Composite actions = new Composite(shell, SWT.NONE);
+    actions.setLayout(new RowLayout());
+    actions.setLayoutData(new GridData(SWT.RIGHT, SWT.CENTER, true, false, 2, 1));
+    button(
+        actions,
+        "Test…",
+        () -> {
+          try {
+            new PythonPreviewDialog(shell, variables, collect(), name.getText()).open();
+          } catch (Exception e) {
+            error(e);
+          }
+        });
+    button(actions, "OK", this::ok);
+    button(actions, "Cancel", this::cancel);
+    shell.setSize(1000, 780);
     BaseDialog.defaultShellHandling(shell, c -> ok(), c -> cancel());
-
     return transformName;
   }
 
-  private void getData() {
-    wTransformName.setText(Const.NVL(transformName, ""));
-    selectExecutionMode(input.getExecutionModeEnum());
-    wExternalEnvironmentEnabled.setSelection(input.isExternalEnvironmentEnabled());
-    wGraalPyVenvPath.setText(Const.NVL(input.getGraalPyVenvPath(), ""));
-    wScript.setText(Const.NVL(input.getScriptText(), ""));
-    currentScriptFile = null;
-
-    wFields.clearAll(false);
-    for (GraalPyOutputField field : input.getOutputFields()) {
-      wFields.add(
-          Const.NVL(field.getName(), ""),
-          Const.NVL(field.getType(), ""),
-          intValue(field.getLength()),
-          intValue(field.getPrecision()),
-          field.isReplaceExisting() ? YES_NO_COMBO[1] : YES_NO_COMBO[0]);
-    }
-
-    input.setChanged(changed);
-  }
-
-  private void getInfo() {
-    input.setScriptText(wScript.getText());
-    input.setExecutionMode(getSelectedExecutionMode().getCode());
-    input.setExternalEnvironmentEnabled(wExternalEnvironmentEnabled.getSelection());
-    input.setGraalPyVenvPath(wGraalPyVenvPath.getText());
-
-    List<GraalPyOutputField> outputFields = new ArrayList<>();
-    for (TableItem item : wFields.getNonEmptyItems()) {
-      GraalPyOutputField field = new GraalPyOutputField();
-      field.setName(item.getText(1));
-      field.setType(item.getText(2));
-      field.setLength(parseInteger(item.getText(3)));
-      field.setPrecision(parseInteger(item.getText(4)));
-      field.setReplaceExisting(YES_NO_COMBO[1].equals(item.getText(5)));
-      outputFields.add(field);
-    }
-    input.setOutputFields(outputFields);
-  }
-
-  private void selectExecutionMode(GraalPyExecutionMode executionMode) {
-    if (executionMode == GraalPyExecutionMode.EMIT_MANY) {
-      wMode.select(1);
-    } else {
-      wMode.select(0);
-    }
-  }
-
-  private GraalPyExecutionMode getSelectedExecutionMode() {
-    return wMode.getSelectionIndex() == 1
-        ? GraalPyExecutionMode.EMIT_MANY
-        : GraalPyExecutionMode.RETURN_ONE;
-  }
-
-  private void updateExternalEnvironmentControls() {
-    boolean enabled = wExternalEnvironmentEnabled.getSelection();
-    wGraalPyVenvPath.setEnabled(enabled);
-    wBrowseGraalPyVenvPath.setEnabled(enabled);
-    wlExternalEnvironmentWarning.setEnabled(enabled);
-  }
-
-  private void updateScriptFileButtons() {
-    wSaveScript.setEnabled(currentScriptFile != null);
-  }
-
-  private void browseGraalPyVenvPath() {
-    DirectoryDialog dialog = new DirectoryDialog(shell);
-    String current = wGraalPyVenvPath.getText();
-    if (!Utils.isEmpty(current)) {
-      dialog.setFilterPath(current);
-    }
-    String selected = dialog.open();
-    if (selected != null) {
-      wGraalPyVenvPath.setText(selected);
-    }
-  }
-
-  private void loadScriptFromFile() {
-    FileDialog dialog = new FileDialog(shell, SWT.OPEN);
-    dialog.setFilterExtensions(new String[] {"*.py", "*.*"});
-    applyCurrentScriptFile(dialog);
-    String selected = dialog.open();
-    if (selected == null) {
-      return;
-    }
-    if (!Utils.isEmpty(wScript.getText()) && !confirmReplaceScript()) {
-      return;
-    }
-    try {
-      Path path = Path.of(selected);
-      wScript.setText(GraalPyScriptFileSupport.load(path));
-      currentScriptFile = path;
-      updateScriptFileButtons();
-    } catch (Exception e) {
-      new ErrorDialog(
-          shell,
-          BaseMessages.getString(PKG, "GraalPyTransformDialog.Script.LoadError.Title"),
-          BaseMessages.getString(PKG, "GraalPyTransformDialog.Script.LoadError.Message"),
-          e);
-    }
-  }
-
-  private boolean confirmReplaceScript() {
-    MessageBox confirmation = new MessageBox(shell, SWT.ICON_WARNING | SWT.YES | SWT.NO);
-    confirmation.setText(BaseMessages.getString(PKG, "GraalPyTransformDialog.Script.Replace.Title"));
-    confirmation.setMessage(
-        BaseMessages.getString(PKG, "GraalPyTransformDialog.Script.Replace.Message"));
-    return confirmation.open() == SWT.YES;
-  }
-
-  private void saveScript(boolean forceSaveAs) {
-    Path target = currentScriptFile;
-    if (forceSaveAs || target == null) {
-      FileDialog dialog = new FileDialog(shell, SWT.SAVE);
-      dialog.setFilterExtensions(new String[] {"*.py", "*.*"});
-      applyCurrentScriptFile(dialog);
-      String selected = dialog.open();
-      if (selected == null) {
-        return;
-      }
-      target = Path.of(selected);
-    }
-    if (forceSaveAs && Files.exists(target) && !confirmOverwrite(target)) {
-      return;
-    }
-    try {
-      GraalPyScriptFileSupport.save(target, wScript.getText());
-      currentScriptFile = target;
-      updateScriptFileButtons();
-    } catch (Exception e) {
-      new ErrorDialog(
-          shell,
-          BaseMessages.getString(PKG, "GraalPyTransformDialog.Script.SaveError.Title"),
-          BaseMessages.getString(PKG, "GraalPyTransformDialog.Script.SaveError.Message"),
-          e);
-    }
-  }
-
-  private boolean confirmOverwrite(Path target) {
-    MessageBox confirmation = new MessageBox(shell, SWT.ICON_WARNING | SWT.YES | SWT.NO);
-    confirmation.setText(BaseMessages.getString(PKG, "GraalPyTransformDialog.Script.Overwrite.Title"));
-    confirmation.setMessage(
-        BaseMessages.getString(PKG, "GraalPyTransformDialog.Script.Overwrite.Message", target));
-    return confirmation.open() == SWT.YES;
-  }
-
-  private void applyCurrentScriptFile(FileDialog dialog) {
-    if (currentScriptFile == null) {
-      return;
-    }
-    Path parent = currentScriptFile.getParent();
-    if (parent != null) {
-      dialog.setFilterPath(parent.toString());
-    }
-    dialog.setFileName(currentScriptFile.getFileName().toString());
-  }
-
-  private String intValue(int value) {
-    return value > 0 ? Integer.toString(value) : "";
-  }
-
-  private int parseInteger(String value) {
-    if (Utils.isEmpty(value)) {
-      return -1;
-    }
-    try {
-      return Integer.parseInt(value);
-    } catch (NumberFormatException ignored) {
-      return -1;
-    }
+  private GraalPyTransformMeta collect() {
+    GraalPyTransformMeta result = input.clone();
+    result.setScriptText(script.getText());
+    result.setExecutionMode(mode.getText());
+    result.setScriptSource(source.getText());
+    result.setScriptPath(scriptPath.getText());
+    result.setInputMode(selection.getText());
+    result.setSelectedInputs(
+        inputs.getNonEmptyItems().stream().map(i -> new GraalPyInputField(i.getText(1))).toList());
+    result.setParameters(
+        parameters.getNonEmptyItems().stream()
+            .map(i -> new GraalPyParameter(i.getText(1), i.getText(2)))
+            .toList());
+    result.setOutputFields(
+        fields.getNonEmptyItems().stream()
+            .map(
+                i -> {
+                  GraalPyOutputField f = new GraalPyOutputField();
+                  f.setName(i.getText(1));
+                  f.setType(i.getText(2));
+                  f.setLength(parse(i.getText(3)));
+                  f.setPrecision(parse(i.getText(4)));
+                  f.setReplaceExisting("Yes".equals(i.getText(5)));
+                  return f;
+                })
+            .toList());
+    result.setExternalEnvironmentEnabled(external.getSelection());
+    result.setGraalPyVenvPath(venv.getText());
+    result.setNativeAccessEnabled(nativeAccess.getSelection());
+    result.setExecutionTimeoutSeconds(Long.parseLong(timeout.getText()));
+    result.setMaxEmittedRows(Long.parseLong(outputLimit.getText()));
+    result.setMaxLogBytes(Long.parseLong(logLimit.getText()));
+    return result;
   }
 
   private void ok() {
-    if (Utils.isEmpty(wTransformName.getText())) {
-      return;
+    if (name.getText().isBlank()) return;
+    try {
+      GraalPyTransformMeta result = collect();
+      result.validate(null);
+      input.copyConfigurationFrom(result);
+      input.setChanged();
+      transformName = name.getText();
+      dispose();
+    } catch (Exception e) {
+      error(e);
     }
-
-    transformName = wTransformName.getText();
-    getInfo();
-    dispose();
   }
 
   private void cancel() {
     transformName = null;
-    input.setChanged(changed);
     dispose();
+  }
+
+  private void updateSource() {
+    scriptPath.setEnabled("FILE".equals(source.getText()));
+  }
+
+  private void error(Exception e) {
+    new ErrorDialog(shell, "GraalPy", "Unable to apply configuration", e);
+  }
+
+  private String chooseFile(int flags) {
+    FileDialog dialog = new FileDialog(shell, flags);
+    dialog.setFilterExtensions(new String[] {"*.py", "*.*"});
+    return dialog.open();
+  }
+
+  private boolean confirm(String message) {
+    MessageBox box = new MessageBox(shell, SWT.YES | SWT.NO | SWT.ICON_QUESTION);
+    box.setText("GraalPy");
+    box.setMessage(message);
+    return box.open() == SWT.YES;
+  }
+
+  private void loadFile() {
+    String path = chooseFile(SWT.OPEN);
+    if (path == null || (!script.getText().isBlank() && !confirm("Replace editor contents?")))
+      return;
+    try {
+      editorFile = Path.of(path);
+      script.setText(GraalPyScriptFileSupport.load(editorFile));
+      save.setEnabled(true);
+    } catch (Exception e) {
+      error(e);
+    }
+  }
+
+  private void saveFile(boolean saveAs) {
+    try {
+      Path path = editorFile;
+      if (saveAs || path == null) {
+        String chosen = chooseFile(SWT.SAVE);
+        if (chosen == null) return;
+        path = Path.of(chosen);
+        if (Files.exists(path) && !confirm("Overwrite " + path + "?")) return;
+      }
+      GraalPyScriptFileSupport.save(path, script.getText());
+      editorFile = path;
+      save.setEnabled(true);
+    } catch (Exception e) {
+      error(e);
+    }
+  }
+
+  private TableView table(Composite parent, ColumnInfo[] columns, int rows) {
+    TableView table =
+        new TableView(
+            variables,
+            parent,
+            SWT.BORDER | SWT.FULL_SELECTION | SWT.MULTI | SWT.V_SCROLL | SWT.H_SCROLL,
+            columns,
+            rows,
+            e -> {},
+            props);
+    table.clearAll(false);
+    return table;
+  }
+
+  static ColumnInfo column(String name) {
+    return new ColumnInfo(name, ColumnInfo.COLUMN_TYPE_TEXT);
+  }
+
+  static ColumnInfo choice(String name, String[] values) {
+    return new ColumnInfo(name, ColumnInfo.COLUMN_TYPE_CCOMBO, values);
+  }
+
+  static void fill(Control control) {
+    control.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
+  }
+
+  static Label label(Composite parent, String text) {
+    Label label = new Label(parent, SWT.WRAP);
+    label.setText(text);
+    return label;
+  }
+
+  static Text text(Composite parent, String value) {
+    Text text = new Text(parent, SWT.BORDER);
+    text.setText(value);
+    fill(text);
+    return text;
+  }
+
+  static Button button(Composite parent, String text, Runnable action) {
+    Button b = new Button(parent, SWT.PUSH);
+    b.setText(text);
+    b.addListener(SWT.Selection, e -> action.run());
+    return b;
+  }
+
+  private Button check(Composite parent, boolean value) {
+    Button b = new Button(parent, SWT.CHECK);
+    b.setSelection(value);
+    return b;
+  }
+
+  private Combo combo(Composite parent, String[] values, String selected) {
+    Combo c = new Combo(parent, SWT.DROP_DOWN | SWT.READ_ONLY);
+    c.setItems(values);
+    c.setText(selected);
+    fill(c);
+    return c;
+  }
+
+  private Composite page(TabFolder folder, String title, int columns) {
+    TabItem tab = new TabItem(folder, SWT.NONE);
+    tab.setText(title);
+    Composite page = new Composite(folder, SWT.NONE);
+    page.setLayout(new GridLayout(columns, false));
+    tab.setControl(page);
+    return page;
+  }
+
+  private static int parse(String value) {
+    return value.isBlank() ? -1 : Integer.parseInt(value);
+  }
+
+  private static String number(int value) {
+    return value < 0 ? "" : Integer.toString(value);
   }
 }

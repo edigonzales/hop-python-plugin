@@ -27,3 +27,57 @@ jobs:
       group-id: ch.so.agi
       hop-version: 2.19.0
     secrets: inherit
+
+  python-environments:
+    name: Pure Python / ${{ matrix.os }} / Java ${{ matrix.java }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-15, windows-latest]
+        java: ['21', '25']
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ matrix.java }}
+          cache: maven
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Provision pinned GraalPy and packaging
+        run: python scripts/setup-test-venv.py --directory target/test-python
+      - name: Verify package imports and concurrent sessions
+        shell: bash
+        run: >-
+          mvn -B -ntp -pl hop-transform-graalpy -am test
+          -Dtest=PythonEnvironmentIntegrationTest
+          -Dsurefire.failIfNoSpecifiedTests=false
+          "-Dgraalpy.test.venv=$(pwd)/target/test-python/venv"
+          "-Dgraalpy.test.cpython=$(pwd)/target/test-python/cpython-venv"
+
+  swt-smoke:
+    name: SWT / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-15, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - name: Open, run, stop and close the actual dialogs
+        shell: bash
+        run: |
+          if [[ "$RUNNER_OS" == "Linux" ]]; then
+            xvfb-run -a mvn -B -ntp -pl hop-transform-graalpy -am test -Dtest=PythonDialogSmokeTest -Dgraalpy.test.ui=true -Dsurefire.failIfNoSpecifiedTests=false
+          else
+            mvn -B -ntp -pl hop-transform-graalpy -am test -Dtest=PythonDialogSmokeTest -Dgraalpy.test.ui=true -Dsurefire.failIfNoSpecifiedTests=false
+          fi

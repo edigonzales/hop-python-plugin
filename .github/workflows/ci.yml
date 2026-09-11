@@ -62,6 +62,22 @@ jobs:
             --hop-home "$RUNNER_TEMP/isolated-hop/hop" \
             --plugin-zip "$plugin_zip"
 
+      - name: Download geometry install bundle
+        shell: bash
+        run: >-
+          mvn -B -ntp org.apache.maven.plugins:maven-dependency-plugin:3.8.1:copy
+          -Dartifact=ch.so.agi:hop-geometry-type-plugin:0.2.0-SNAPSHOT:zip
+          -DoutputDirectory=.ci/geometry
+
+      - name: Verify installed geometry handoff
+        shell: bash
+        run: |
+          plugin_zip="$(find .ci/python -type f -name 'hop-transform-graalpy-*.zip' -print -quit)"
+          python3 scripts/run-e2e.py \
+            --hop-home "$RUNNER_TEMP/isolated-hop/hop" \
+            --plugin-zip "$plugin_zip" \
+            --geometry-plugin-zip .ci/geometry/hop-geometry-type-plugin-0.2.0-SNAPSHOT.zip
+
   publish:
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     needs: [lint, verify, installed-e2e]

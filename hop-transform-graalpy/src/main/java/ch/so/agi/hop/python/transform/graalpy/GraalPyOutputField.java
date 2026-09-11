@@ -15,7 +15,8 @@ public class GraalPyOutputField {
           IValueMeta.TYPE_BIGNUMBER,
           IValueMeta.TYPE_DATE,
           IValueMeta.TYPE_TIMESTAMP,
-          IValueMeta.TYPE_BOOLEAN);
+          IValueMeta.TYPE_BOOLEAN,
+          IValueMeta.TYPE_BINARY);
 
   @HopMetadataProperty private String name;
   @HopMetadataProperty private String type;
@@ -36,7 +37,18 @@ public class GraalPyOutputField {
   }
 
   public static String[] supportedTypeNames() {
-    return SUPPORTED_TYPES.stream().map(ValueMetaFactory::getValueMetaName).toArray(String[]::new);
+    java.util.List<String> names =
+        new java.util.ArrayList<>(
+            SUPPORTED_TYPES.stream().map(ValueMetaFactory::getValueMetaName).toList());
+    if (ValueMetaFactory.getIdForValueMeta("Geometry") == PythonGeometryAdapter.TYPE)
+      names.add("Geometry");
+    return names.toArray(String[]::new);
+  }
+
+  public static boolean isSupportedType(int type) {
+    return SUPPORTED_TYPES.contains(type)
+        || (type == PythonGeometryAdapter.TYPE
+            && ValueMetaFactory.getIdForValueMeta("Geometry") == type);
   }
 
   public int getHopType() {

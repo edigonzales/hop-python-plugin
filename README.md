@@ -1,227 +1,214 @@
 # hop-python-plugin
 
-Apache Hop `2.19.0` transform plugin that executes inline Python scripts with GraalPy.
+Apache Hop **2.19.0** transform plugin embedding **GraalPy 25.3.4.1**. Build with Java 21; CI covers regular Temurin/OpenJDK 21 and 25 on Linux, macOS ARM64 and Windows. The plugin includes its Python runtime; an external CPython interpreter is not supported.
 
-## Modules
-
-- `./hop-transform-graalpy`
-  - Main transform implementation, UI dialog, resources and tests.
-- `./assemblies/assemblies-transform-graalpy`
-  - Install ZIP assembly under `plugins/transforms/graalpy`.
-
-## Build
-
-Full build including tests and assembly:
+## Build and install
 
 ```bash
 mvn clean verify
+python3 scripts/verify-package.py
+unzip assemblies/assemblies-transform-graalpy/target/hop-transform-graalpy-0.1.0-SNAPSHOT.zip -d "$HOP_HOME"
 ```
 
-Fast local plugin build without tests:
+The install root is `plugins/transforms/graalpy`. `scripts/dev-sync-hop-plugin.sh "$HOP_HOME"` remains available for local development; it builds without tests and replaces that plugin directory.
 
-```bash
-mvn -pl hop-transform-graalpy -am -DskipTests package
-```
+Modules:
 
-Build prerequisites:
+- `hop-transform-graalpy`: metadata, dialog, runtime and tests.
+- `assemblies/assemblies-transform-graalpy`: install ZIP.
 
-- Java 21 compatible toolchain (`maven.compiler.release=21`)
-- Regular Temurin/OpenJDK 21 or 25, not a GraalVM JDK
+CI publishes only after verification, pure-Python environment tests, SWT smoke tests and installed-Hop scenarios pass. The verified ZIP is published on `main` as `ch.so.agi:hop-transform-graalpy:0.1.0-SNAPSHOT`; pull requests do not publish.
 
-The plugin embeds GraalPy `25.3.4.1`. The CI verifies Java 21 and 25 on Ubuntu, macOS and Windows. Use a regular Temurin/OpenJDK runtime rather than a GraalVM JDK, because the plugin ships the GraalPy language runtime itself.
+## Python row contract
 
-The canonical CI build is Ubuntu with Java 21. It runs `mvn -U -B -ntp clean verify`, validates the complete install ZIP and runs an Installed-Hop smoke test. The other five matrix combinations run `clean test` for compatibility. Pull requests never publish Maven artifacts; successful `main` builds publish the already verified ZIP as `ch.so.agi:hop-transform-graalpy:0.1.0-SNAPSHOT` to `https://jars.interlis.guru/snapshots/`.
-
-## Install in Hop
-
-### Option A: Manual ZIP install
-
-1. Build the install ZIP:
-
-```bash
-mvn -pl assemblies/assemblies-transform-graalpy -am package
-```
-
-2. Extract it into your Hop home:
-
-```bash
-unzip -o ./assemblies/assemblies-transform-graalpy/target/hop-transform-graalpy-0.1.0-SNAPSHOT.zip -d "$HOP_HOME"
-```
-
-3. Resulting plugin folder:
-
-- `$HOP_HOME/plugins/transforms/graalpy`
-
-### Option B: Scripted build + sync into Hop home
-
-```bash
-./scripts/dev-sync-hop-plugin.sh "$HOP_HOME"
-```
-
-Or, if `HOP_HOME` is exported:
-
-```bash
-./scripts/dev-sync-hop-plugin.sh
-```
-
-## Shell scripts
-
-### `scripts/dev-sync-hop-plugin.sh`
-
-Builds the plugin and assembly, removes the existing target plugin folder and unpacks the ZIP into `HOP_HOME`.
-
-Behavior:
-
-- runs `mvn -q -DskipTests package`
-- expects `./assemblies/assemblies-transform-graalpy/target/hop-transform-graalpy-0.1.0-SNAPSHOT.zip`
-- removes `$HOP_HOME/plugins/transforms/graalpy` before install
-
-## Tests
-
-Current automated coverage includes:
-
-- metadata XML roundtrip and field merge behavior
-- runtime mode semantics for `RETURN_ONE` and `EMIT_MANY`
-- strict output-schema enforcement
-- type bridge roundtrips for string, integer, number, big number, boolean, `None` and date values
-- security restrictions for Java access, file I/O, subprocesses and environment variables
-- plugin discovery from an external Hop plugin folder
-
-Run tests:
-
-```bash
-mvn test
-```
-
-## Python contract
-
-The script must define:
+Scripts must define `process(row, ctx)`. Each transform copy has its own context and state.
 
 ```python
 def process(row, ctx):
-    return row
+    if not row['active']:
+        return None                 # filter the input row
+    return {'name': row['name'].upper()}
 ```
 
-Supported runtime modes:
+`RETURN_ONE` accepts a dictionary of **changes**, or `None`. `return {}` passes through one row unchanged, including when the output-field table is empty.
 
-- `RETURN_ONE`: return a `dict` or `None`
-- `EMIT_MANY`: call `ctx.emit({...})` zero to many times and return `None`
+- Declare every returned field in **Output fields**.
+- Existing fields to change use **Replace existing = Yes**.
+- New appended fields use **Replace existing = No**.
+- An omitted replacement retains its original value; an omitted new field is null.
+- Explicit `None` sets the output field to null.
+- An undeclared output field is an error. Returning the whole input dictionary is valid only when all its keys are declared.
 
-Important:
-
-- Every field that Python returns in `RETURN_ONE` or emits via `ctx.emit(...)` in `EMIT_MANY` must be declared in the `Output Fields` table in the dialog.
-- If Python returns or emits a field that is not declared there, the transform fails with an error.
-- Existing input fields that should simply pass through unchanged do not need to be declared.
-- Existing input fields that Python should overwrite must be declared with `replaceExisting = Yes`.
-- New appended fields must be declared with `replaceExisting = No`.
-
-### Example: `RETURN_ONE`
-
-Typical 1:1 row transformation with one replaced field and one appended field:
+`EMIT_MANY` accepts zero or more calls to `ctx.emit(mapping)` and requires `process()` to return `None`:
 
 ```python
 def process(row, ctx):
+    for part in row['text'].split(';'):
+        ctx.emit({'part': part})
+```
+
+Each output gets a separate Java row array and an immediate snapshot of converted output values. Outputs are buffered **per input row**. `ctx.skip()` or `ctx.reject()` discards that input's buffered outputs. There is no streaming/generator contract, and no rollback of rows from earlier inputs.
+
+## Inputs, parameters and lifecycle
+
+**Inputs / Parameters** selects `ALL` or `SELECTED`. In selected mode, Python sees only the listed fields. An empty selection is valid. Unselected fields stay on the Hop side, so unsupported types can pass through unchanged. Missing selected fields are configuration errors.
+
+Parameters have unique names and string values. Hop variables are resolved once when the session starts; values are passed separately from Python source.
+
+```python
+def setup(ctx):
+    ctx.state['minimum'] = float(ctx.parameters['MINIMUM'])
+    ctx.state['accepted'] = 0
+
+def process(row, ctx):
+    if row['height'] < ctx.state['minimum']:
+        return None
+    ctx.state['accepted'] += 1
+    return {}
+
+def close(ctx):
+    ctx.log.info(f"Accepted {ctx.state['accepted']} rows")
+```
+
+`setup(ctx)` and `close(ctx)` are optional and must return `None`. They cannot emit, skip or reject rows. Setup runs once before processing, including on empty input. Close runs once before normal context disposal, including after a failure when the context remains usable. Forced cancellation cannot run Python cleanup. There is no `finish()` hook or hook-generated output.
+
+Available context properties:
+
+| Property | Meaning |
+|---|---|
+| `ctx.parameters` | Read-only mapping of resolved string parameters |
+| `ctx.state` | Mutable Python dictionary private to this copy/session |
+| `ctx.input_fields` | Read-only metadata for fields exposed to Python |
+| `ctx.fields` | Alias of `ctx.input_fields` |
+| `ctx.output_fields` | Read-only complete output schema |
+| `ctx.transform_name`, `ctx.copy_nr` | Transform identity |
+| `ctx.log.info/warn/error(message)` | Bounded Hop logging |
+| `ctx.geometry` | Optional geometry constructors |
+
+Field metadata contains `name`, `type`, `length` and `precision`. Global Python variables also remain local to the session. They are not pipeline-wide state.
+
+## Inline and external scripts
+
+**Script source** is `INLINE` or `FILE`.
+
+- Inline code remains stored in pipeline metadata.
+- File paths support Hop variables. Relative paths resolve against `${PROJECT_HOME}`; without it, use an absolute path.
+- A file is loaded once per session as UTF-8. Its absolute path and SHA-256 are logged. Editing it does not change an already running session.
+- There is no substitution of variables in Python source and no automatic addition of the script directory to the Python import path. Install reusable importable modules in the configured venv.
+
+The editor's **Load**, **Save** and **Save as** remain import/export conveniences. Their last-used path is local to the dialog session and is independent of the persisted runtime file path. Existing saved scripts are never rewritten by migration.
+
+## External GraalPy environments
+
+Enable **External GraalPy environment** and supply a GraalPy-created venv. Provision it and install packages outside Hop; the dialog does not run pip.
+
+Before loading the user script, Hop probes the selected interpreter using a fixed isolated command with a ten-second timeout. It checks `sys.implementation`, the language version and the distribution's `release` metadata against GraalPy 25.3.4.1, then verifies the embedded context's actual venv prefix. This matters because the 25.3.4.1 distribution reports only 25.3.4 in `sys.graalpy_version_info`. Missing distribution metadata, CPython environments and mismatched versions are rejected explicitly.
+
+The default embedded context denies file/network I/O, arbitrary Java class access, process creation, thread creation and native extensions. External environments enable filesystem/network I/O for trusted Python code. **Native access** is a separate experimental opt-in for new configurations. Native extensions can bypass JVM/Truffle restrictions and are not guaranteed to work across platforms or multiple contexts. This release guarantees the tested pure-Python environment path, not arbitrary package compatibility.
+
+## Cancellation and limits
+
+Hop Stop and preview Stop cancel the active context. A cancelled context is never reused. Runtime diagnostics distinguish script loading, setup, row processing and close, and include script location, transform/copy and input row number where applicable.
+
+New transforms default to:
+
+| Limit | Default |
+|---|---:|
+| Seconds per phase or input row | 60 |
+| Buffered emitted rows per input | 10,000 |
+| Python log bytes per session | 1 MiB |
+
+`0` disables an individual limit. Processing time includes Python execution and conversion; downstream Hop backpressure is outside this timer. Output-limit and timeout failures abort the transform. Log overflow produces one suppression notice. `ctx.log`, stdout and stderr share the log budget.
+
+Cancellation is not hard process isolation: blocking Java calls and native code may not terminate promptly, and row/log limits are not a general memory quota. Independent native worker processes are outside this version.
+
+## Hop error handling
+
+```python
+def process(row, ctx):
+    if row['height'] is None:
+        ctx.reject(code='MISSING_HEIGHT', message='Height is required', field='height')
+    return {}
+```
+
+Configure a normal Hop error hop to route rejections. `reject()` forwards the **original input row**, including excluded fields, with code/message/field information. Without an error hop it fails the transform. Hop's error thresholds apply normally.
+
+`skip()` is ordinary filtering. `abort(message)` fails the transform deliberately. Syntax errors, uncaught Python exceptions, conversion errors and runtime limits remain fatal; they are not automatically routed as data errors. Cleanup failures do not replace the primary failure.
+
+## Geometry and Binary
+
+Install the separate **hop-geometry-type 0.2** plugin to use Geometry fields. The adapter uses its registered classloader and curve-aware codecs. The Python ZIP contains neither another geometry plugin nor another JTS runtime. Ordinary scripts work without the geometry plugin; unselected Geometry fields can pass through unchanged.
+
+```python
+def process(row, ctx):
+    geom = row['geom']
     return {
-        "name": row["name"].upper(),
-        "greeting": f"Hello {row['name']}"
+        'area': geom.area,
+        'center': geom.centroid(),
+        'buffer': geom.buffer(5),
     }
 ```
 
-Example output field configuration in Hop:
+Declare `area` as Number and `center`/`buffer` as Geometry. Geometry outputs accept only wrappers produced by this session or `None`; strings are not implicitly parsed.
 
-- `name` as `String`, `replaceExisting = Yes`
-- `greeting` as `String`, `replaceExisting = No`
+Properties: `area`, `length`, `is_valid`, `is_empty`, `geom_type`, `srid`.
 
-Returning `None` filters the current row:
-
-```python
-def process(row, ctx):
-    if row.get("active") is not True:
-        return None
-    return row
-```
-
-### Example: `EMIT_MANY`
-
-Typical 1:n expansion where one input row emits multiple output rows:
+Methods and constructors:
 
 ```python
-def process(row, ctx):
-    count = row.get("count", 0)
-    for i in range(count):
-        ctx.emit({
-            "source_id": row["id"],
-            "index": i
-        })
-    return None
+geom.buffer(distance)       # 8 segments per quadrant; new geometry, same SRID
+geom.centroid()             # new geometry, same SRID
+geom.to_wkt()               # WKT without SRID
+geom.to_wkb()               # bytes; EWKB includes SRID when set
+ctx.geometry.from_wkt(text, srid=0)
+ctx.geometry.from_wkb(data, srid=None)  # preserve embedded SRID unless explicitly overridden
 ```
 
-Example output field configuration in Hop:
+Wrappers are read-only. Python cannot access the underlying Java geometry. Imports and output snapshots are independent copies; `None` and empty geometries remain distinct.
 
-- `source_id` as `Integer` or `String`, depending on the input field, `replaceExisting = No`
-- `index` as `Integer`, `replaceExisting = No`
+Area, length, validity, buffer and centroid require **linear XY input**. Calculations are planar in coordinate units, without reprojection or geodesic interpretation. Curves and declared Z/M sequences—including empty sequences—are rejected for these calculations; they are not silently flattened. Some legacy JTS producers allocate XYZ sequences even for XY-looking coordinates; such fields must be explicitly normalized upstream before calculation.
 
-Emitting nothing is valid and produces zero rows for that input row:
+WKB/EWKB preserves the curve and Z/M types supported by the installed codecs. WKT output can retain curves; WKT input supports linear types including Z/M. Use EWKB to construct curved geometries. An unknown SRID remains `0`.
 
-```python
-def process(row, ctx):
-    if row.get("count", 0) <= 0:
-        return None
-    ctx.emit({"value": row["count"]})
-    return None
+Hop Binary is exposed as copied Python `bytes`. Binary output accepts `bytes` or `bytearray` and snapshots the content.
+
+## Manual test preview
+
+**Test…** opens a session-local preview. Define an input schema, choose the number of rows and apply the schema to edit cells. Each field has an explicit null selector; a blank string is not automatically null. Binary and Geometry input use hex WKB/EWKB. Geometry output includes readable WKT and EWKB.
+
+Results, rejected rows, logs and errors appear separately. Every run uses a fresh production runtime session with the current dialog configuration. The preview does not run upstream transforms, save example data into the pipeline or infer/alter the output schema.
+
+Preview caps are 100 input rows, 1,000 total output rows, 1 MiB logs and 30 seconds total runtime. Stricter transform limits still apply. Execution runs off the SWT thread; Stop and closing the window request cancellation. The pipeline configuration is applied only with the main dialog's OK button.
+
+## Compatibility
+
+New metadata stores `configurationVersion=2`. Loading XML without that field retains the old behavior: inline source, all input fields, disabled limits and the previous native permission for enabled external environments. Output scripts and field declarations remain unchanged. Saving writes the migrated configuration explicitly. New dialogs start with the defaults above.
+
+Date/Timestamp semantics are unchanged in this release: system-zone conversion and millisecond-limited Java Date output. Nanosecond-preserving timestamp conversion is a separate change.
+
+## Verification
+
+```bash
+# All local tests and install ZIP
+mvn clean verify
+python3 scripts/verify-package.py
+
+# Reproducible native-distribution venv with a pinned pure-Python package
+python3 scripts/setup-test-venv.py --directory target/test-python
+mvn -pl hop-transform-graalpy -am test \
+  -Dgraalpy.test.venv="$PWD/target/test-python/venv" \
+  -Dgraalpy.test.cpython="$PWD/target/test-python/cpython-venv" \
+  -Dgraalpy.test.pure.package=packaging
+
+# Real SWT interaction; use xvfb-run -a on headless Linux
+mvn -pl hop-transform-graalpy -am test \
+  -Dtest=PythonDialogSmokeTest -Dgraalpy.test.ui=true \
+  -Dsurefire.failIfNoSpecifiedTests=false
+
+# Use a disposable, freshly extracted Hop installation
+python3 scripts/run-e2e.py --hop-home /path/to/disposable/hop \
+  --plugin-zip assemblies/assemblies-transform-graalpy/target/hop-transform-graalpy-0.1.0-SNAPSHOT.zip
+# Add --geometry-plugin-zip /path/to/hop-geometry-type-plugin-0.2.0-SNAPSHOT.zip
 ```
 
-Available helpers:
-
-- `ctx.emit(mapping)`
-- `ctx.skip()`
-- `ctx.abort(message)`
-- `ctx.log.info(...)`, `ctx.log.warn(...)`, `ctx.log.error(...)`
-- `ctx.fields`
-
-## Script import and export
-
-The dialog keeps storing the Python code inline in the transform metadata, but it now supports file-based editor convenience:
-
-- `Load...` reads a `.py` file into the editor
-- `Save` writes back to the last file used in the current dialog session
-- `Save As...` writes the current editor content to a chosen `.py` file
-
-Important:
-
-- load/save paths are session-local dialog state and are not stored in the pipeline
-- the inline script remains the only persisted script source
-- script files are handled as UTF-8
-
-## External GraalPy venv
-
-The dialog can optionally enable imports from an external GraalPy virtual environment.
-
-Configuration:
-
-- enable `External Python environment`
-- point `GraalPy venv path` to a GraalPy-created venv
-- the path can use Hop variables
-
-Rules and limits:
-
-- only GraalPy-created venvs are supported, not CPython venvs
-- the venv should match the plugin GraalPy version `25.3.4.1`
-- there is no `pip` action in the dialog; manage the venv outside Hop
-- there is no generic `sys.path` UI in this feature
-
-Security:
-
-- by default the transform remains sandboxed
-- enabling the external venv explicitly relaxes the sandbox so filesystem-based imports work
-- native Python packages are then effectively trusted code and can break the previous safety boundary
-
-## V1 limits
-
-- scripts remain inline in the pipeline; the dialog also provides session-local file import/export convenience
-- static output schema only
-- no `yield` or generator contract
-- no direct Java access from Python
-- no built-in `pip` or package installation workflow
-- no generic `sys.path` UI
-- no support for CPython or arbitrary foreign Python interpreters
+Environment and SWT tests are opt-in locally and required in their dedicated CI jobs. Native-package tests remain optional. Cancellation probes run in disposable JVMs with external process deadlines. Installed tests cover pure filters, independent emitted rows, file scripts/parameters, error hops, empty-input hooks and, with Geometry installed, geometry handoff to another transform.

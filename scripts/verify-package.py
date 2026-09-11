@@ -76,7 +76,7 @@ def validate_zip(zip_path: Path, version: str) -> dict[str, object]:
         forbidden_runtime = [
             name
             for name in runtime_jars
-            if Path(name).name.startswith(("hop-", "swt"))
+            if Path(name).name.startswith(("hop-", "swt", "jts-", "sogeo-geometry"))
         ]
         if forbidden_runtime:
             raise SystemExit(f"The ZIP embeds Hop/SWT runtime libraries: {forbidden_runtime}")

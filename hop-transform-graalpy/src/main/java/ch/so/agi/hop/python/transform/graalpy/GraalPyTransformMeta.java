@@ -37,10 +37,26 @@ public class GraalPyTransformMeta extends BaseTransformMeta<GraalPyTransform, Gr
     implements ITransformMeta {
   private static final Class<?> PKG = GraalPyTransformMeta.class;
 
+  @HopMetadataProperty private int configurationVersion = 2;
+  @HopMetadataProperty private String inputMode = "ALL";
+  @HopMetadataProperty private String scriptSource = "INLINE";
+  @HopMetadataProperty private String scriptPath = "";
+  @HopMetadataProperty private long executionTimeoutSeconds = 60;
+  @HopMetadataProperty private long maxEmittedRows = 10000;
+  @HopMetadataProperty private long maxLogBytes = 1048576;
+  @HopMetadataProperty private boolean nativeAccessEnabled = false;
+
+  @HopMetadataProperty(groupKey = "selectedInputs", key = "field")
+  private List<GraalPyInputField> selectedInputs = new ArrayList<>();
+
+  @HopMetadataProperty(groupKey = "parameters", key = "parameter")
+  private List<GraalPyParameter> parameters = new ArrayList<>();
+
   @HopMetadataProperty private String scriptText;
   @HopMetadataProperty private String executionMode;
   @HopMetadataProperty private boolean externalEnvironmentEnabled;
   @HopMetadataProperty private String graalPyVenvPath;
+
   @HopMetadataProperty(groupKey = "outputFields", key = "outputField")
   private List<GraalPyOutputField> outputFields;
 
@@ -51,6 +67,22 @@ public class GraalPyTransformMeta extends BaseTransformMeta<GraalPyTransform, Gr
 
   public GraalPyTransformMeta(GraalPyTransformMeta other) {
     this();
+    copyConfigurationFrom(other);
+  }
+
+  public void copyConfigurationFrom(GraalPyTransformMeta other) {
+    selectedInputs.clear();
+    parameters.clear();
+    this.configurationVersion = other.configurationVersion;
+    this.inputMode = other.inputMode;
+    this.scriptSource = other.scriptSource;
+    this.scriptPath = other.scriptPath;
+    this.executionTimeoutSeconds = other.executionTimeoutSeconds;
+    this.maxEmittedRows = other.maxEmittedRows;
+    this.maxLogBytes = other.maxLogBytes;
+    this.nativeAccessEnabled = other.nativeAccessEnabled;
+    other.selectedInputs.forEach(f -> selectedInputs.add(new GraalPyInputField(f.getName())));
+    other.parameters.forEach(p -> parameters.add(new GraalPyParameter(p.getName(), p.getValue())));
     this.scriptText = other.scriptText;
     this.executionMode = other.executionMode;
     this.externalEnvironmentEnabled = other.externalEnvironmentEnabled;
@@ -66,6 +98,16 @@ public class GraalPyTransformMeta extends BaseTransformMeta<GraalPyTransform, Gr
 
   @Override
   public void setDefault() {
+    configurationVersion = 2;
+    inputMode = "ALL";
+    scriptSource = "INLINE";
+    scriptPath = "";
+    executionTimeoutSeconds = 60;
+    maxEmittedRows = 10000;
+    maxLogBytes = 1048576;
+    nativeAccessEnabled = false;
+    selectedInputs = new ArrayList<>();
+    parameters = new ArrayList<>();
     if (outputFields == null) {
       outputFields = new ArrayList<>();
     } else {
@@ -74,15 +116,16 @@ public class GraalPyTransformMeta extends BaseTransformMeta<GraalPyTransform, Gr
     scriptText =
         "def process(row, ctx):\n"
             + "    # return None to filter a row or return a dict to produce output\n"
-            + "    return row\n";
+            + "    return {}\n";
     executionMode = GraalPyExecutionMode.RETURN_ONE.getCode();
     externalEnvironmentEnabled = false;
     graalPyVenvPath = "";
   }
 
   public void validate(IRowMeta inputRowMeta) throws HopTransformException {
-    if (StringUtils.isBlank(scriptText)) {
-      throw new HopTransformException(BaseMessages.getString(PKG, "GraalPyTransform.Exception.EmptyScript"));
+    if ("INLINE".equals(scriptSource) && StringUtils.isBlank(scriptText)) {
+      throw new HopTransformException(
+          BaseMessages.getString(PKG, "GraalPyTransform.Exception.EmptyScript"));
     }
     if (getExecutionModeEnum() == null) {
       throw new HopTransformException(
@@ -92,11 +135,29 @@ public class GraalPyTransformMeta extends BaseTransformMeta<GraalPyTransform, Gr
       throw new HopTransformException(
           BaseMessages.getString(PKG, "GraalPyTransformMeta.Exception.VenvPathMissing"));
     }
-    if (outputFields == null || outputFields.isEmpty()) {
-      throw new HopTransformException(
-          BaseMessages.getString(PKG, "GraalPyTransformMeta.CheckResult.NoOutputFields"));
-    }
+    if (outputFields == null) outputFields = new ArrayList<>();
 
+    if (!List.of("INLINE", "FILE").contains(scriptSource)
+        || !List.of("ALL", "SELECTED").contains(inputMode))
+      throw new HopTransformException("Invalid script source or input mode");
+    if ("FILE".equals(scriptSource) && StringUtils.isBlank(scriptPath))
+      throw new HopTransformException("Script file path is required");
+    if (executionTimeoutSeconds < 0 || maxEmittedRows < 0 || maxLogBytes < 0)
+      throw new HopTransformException("Limits must be non-negative (0 means unlimited)");
+    Set<String> parameterNames = new HashSet<>();
+    for (GraalPyParameter p : parameters) {
+      if (StringUtils.isBlank(p.getName()) || !parameterNames.add(p.getName()))
+        throw new HopTransformException("Parameter names must be non-empty and unique");
+    }
+    Set<String> selectedNames = new HashSet<>();
+    for (GraalPyInputField f : selectedInputs) {
+      if (StringUtils.isBlank(f.getName()) || !selectedNames.add(f.getName()))
+        throw new HopTransformException("Selected input names must be non-empty and unique");
+      if ("SELECTED".equals(inputMode)
+          && inputRowMeta != null
+          && inputRowMeta.indexOfValue(f.getName()) < 0)
+        throw new HopTransformException("Selected input field not found: " + f.getName());
+    }
     Set<String> names = new HashSet<>();
     for (GraalPyOutputField field : outputFields) {
       if (StringUtils.isBlank(field.getName())) {
@@ -108,7 +169,7 @@ public class GraalPyTransformMeta extends BaseTransformMeta<GraalPyTransform, Gr
             BaseMessages.getString(
                 PKG, "GraalPyTransformMeta.Exception.DuplicateField", field.getName()));
       }
-      if (!GraalPyOutputField.SUPPORTED_TYPES.contains(field.getHopType())) {
+      if (!GraalPyOutputField.isSupportedType(field.getHopType())) {
         throw new HopTransformException(
             BaseMessages.getString(
                 PKG,
@@ -196,7 +257,8 @@ public class GraalPyTransformMeta extends BaseTransformMeta<GraalPyTransform, Gr
       ITransformMeta transformMeta,
       PipelineMeta pipelineMeta,
       String transformName) {
-    return new GraalPyTransformDialog(parent, variables, transformMeta, pipelineMeta, transformName);
+    return new GraalPyTransformDialog(
+        parent, variables, transformMeta, pipelineMeta, transformName);
   }
 
   public String getScriptText() {
@@ -241,5 +303,108 @@ public class GraalPyTransformMeta extends BaseTransformMeta<GraalPyTransform, Gr
 
   public void setOutputFields(List<GraalPyOutputField> outputFields) {
     this.outputFields = outputFields == null ? new ArrayList<>() : new ArrayList<>(outputFields);
+  }
+
+  @Override
+  public boolean supportsErrorHandling() {
+    return true;
+  }
+
+  @Override
+  public void loadXml(org.w3c.dom.Node node, IHopMetadataProvider provider)
+      throws org.apache.hop.core.exception.HopXmlException {
+    super.loadXml(node, provider);
+    if (org.apache.hop.core.xml.XmlHandler.getTagValue(node, "configurationVersion") == null) {
+      configurationVersion = 2;
+      inputMode = "ALL";
+      scriptSource = "INLINE";
+      scriptPath = "";
+      selectedInputs = new ArrayList<>();
+      parameters = new ArrayList<>();
+      executionTimeoutSeconds = 0;
+      maxEmittedRows = 0;
+      maxLogBytes = 0;
+      nativeAccessEnabled = externalEnvironmentEnabled;
+    }
+  }
+
+  public int getConfigurationVersion() {
+    return configurationVersion;
+  }
+
+  public void setConfigurationVersion(int value) {
+    configurationVersion = value;
+  }
+
+  public String getInputMode() {
+    return inputMode;
+  }
+
+  public void setInputMode(String value) {
+    inputMode = value;
+  }
+
+  public String getScriptSource() {
+    return scriptSource;
+  }
+
+  public void setScriptSource(String value) {
+    scriptSource = value;
+  }
+
+  public String getScriptPath() {
+    return scriptPath;
+  }
+
+  public void setScriptPath(String value) {
+    scriptPath = value;
+  }
+
+  public long getExecutionTimeoutSeconds() {
+    return executionTimeoutSeconds;
+  }
+
+  public void setExecutionTimeoutSeconds(long value) {
+    executionTimeoutSeconds = value;
+  }
+
+  public long getMaxEmittedRows() {
+    return maxEmittedRows;
+  }
+
+  public void setMaxEmittedRows(long value) {
+    maxEmittedRows = value;
+  }
+
+  public long getMaxLogBytes() {
+    return maxLogBytes;
+  }
+
+  public void setMaxLogBytes(long value) {
+    maxLogBytes = value;
+  }
+
+  public boolean isNativeAccessEnabled() {
+    return nativeAccessEnabled;
+  }
+
+  public void setNativeAccessEnabled(boolean value) {
+    nativeAccessEnabled = value;
+  }
+
+  public List<GraalPyInputField> getSelectedInputs() {
+    return selectedInputs;
+  }
+
+  public void setSelectedInputs(List<GraalPyInputField> value) {
+    selectedInputs = new ArrayList<>(value);
+  }
+
+  public List<GraalPyParameter> getParameters() {
+    return parameters;
+  }
+
+  public void setParameters(List<GraalPyParameter> value) {
+    parameters = new ArrayList<>(value);
   }
 }

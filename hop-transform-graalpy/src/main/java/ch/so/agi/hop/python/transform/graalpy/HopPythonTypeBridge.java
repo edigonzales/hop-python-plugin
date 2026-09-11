@@ -1,7 +1,6 @@
 package ch.so.agi.hop.python.transform.graalpy;
 
 import java.math.BigDecimal;
-import java.math.BigInteger;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -27,6 +26,28 @@ public final class HopPythonTypeBridge {
   private final Value datetimeFactory;
   private final Value stringFunction;
   private final ZoneId zoneId;
+  private final Map<Integer, PythonTypeAdapter> adapters = new LinkedHashMap<>();
+  private final PythonGeometryAdapter geometry = new PythonGeometryAdapter(this);
+  private final Value bytesFactory;
+  private final Value isBytes;
+
+  public Object geometryFactory() {
+    return geometry;
+  }
+
+  PythonGeometryAdapter geometryAdapter() {
+    return geometry;
+  }
+
+  public Value toPythonBytes(byte[] bytes) {
+    return bytesFactory.execute(java.util.HexFormat.of().formatHex(bytes));
+  }
+
+  public byte[] fromPythonBytes(Value value) {
+    if (!isBytes.execute(value).asBoolean())
+      throw new IllegalArgumentException("Expected bytes or bytearray");
+    return java.util.HexFormat.of().parseHex(value.invokeMember("hex").asString());
+  }
 
   public HopPythonTypeBridge(Context context) {
     this.dictFactory = context.eval("python", "dict");
@@ -34,6 +55,21 @@ public final class HopPythonTypeBridge {
     this.datetimeFactory = context.eval("python", "import datetime\ndatetime.datetime");
     this.stringFunction = context.eval("python", "str");
     this.zoneId = ZoneId.systemDefault();
+    bytesFactory = context.eval("python", "lambda text: bytes.fromhex(text)");
+    isBytes = context.eval("python", "lambda value: isinstance(value, (bytes, bytearray))");
+    PythonTypeAdapter standard =
+        new PythonTypeAdapter() {
+          public Object toPython(IValueMeta metadata, Object value) throws Exception {
+            return toStandardPythonValue(metadata, value);
+          }
+
+          public Object fromPython(String field, IValueMeta metadata, Value value)
+              throws Exception {
+            return fromStandardPythonValue(field, metadata, value);
+          }
+        };
+    for (int type : GraalPyOutputField.SUPPORTED_TYPES) adapters.put(type, standard);
+    adapters.put(PythonGeometryAdapter.TYPE, geometry);
   }
 
   public void validateInputTypes(IRowMeta inputRowMeta) throws HopTransformException {
@@ -42,7 +78,14 @@ public final class HopPythonTypeBridge {
     }
     for (int i = 0; i < inputRowMeta.size(); i++) {
       IValueMeta valueMeta = inputRowMeta.getValueMeta(i);
-      if (!GraalPyOutputField.SUPPORTED_TYPES.contains(valueMeta.getType())) {
+      if (valueMeta.getType() == PythonGeometryAdapter.TYPE) {
+        try {
+          geometry.initialize();
+        } catch (Exception e) {
+          throw new HopTransformException("Geometry adapter unavailable", e);
+        }
+      }
+      if (!adapters.containsKey(valueMeta.getType())) {
         throw new HopTransformException(
             BaseMessages.getString(
                 PKG,
@@ -59,7 +102,8 @@ public final class HopPythonTypeBridge {
       return pythonRow;
     }
     for (int i = 0; i < rowMeta.size(); i++) {
-      pythonRow.putHashEntry(rowMeta.getValueMeta(i).getName(), toPythonValue(rowMeta.getValueMeta(i), row[i]));
+      pythonRow.putHashEntry(
+          rowMeta.getValueMeta(i).getName(), toPythonValue(rowMeta.getValueMeta(i), row[i]));
     }
     return pythonRow;
   }
@@ -90,21 +134,45 @@ public final class HopPythonTypeBridge {
       }
       snapshot.put(
           fieldName,
-          fromPythonValue(fieldName, assembler.getOutputValueMeta(fieldName), entry.getArrayElement(1)));
+          fromPythonValue(
+              fieldName, assembler.getOutputValueMeta(fieldName), entry.getArrayElement(1)));
     }
     return snapshot;
   }
 
-  private Object toPythonValue(IValueMeta valueMeta, Object value) throws HopValueException {
+  private Object toPythonValue(IValueMeta metadata, Object value) throws HopValueException {
+    if (value == null) return null;
+    try {
+      return adapters.get(metadata.getType()).toPython(metadata, value);
+    } catch (Exception e) {
+      throw new HopValueException("Input conversion failed for " + metadata.getName(), e);
+    }
+  }
+
+  private Object fromPythonValue(String field, IValueMeta metadata, Value value)
+      throws HopTransformException {
+    if (value == null || value.isNull()) return null;
+    try {
+      return adapters.get(metadata.getType()).fromPython(field, metadata, value);
+    } catch (Exception e) {
+      throw new HopTransformException(
+          "Output conversion failed for " + field + ": " + e.getMessage(), e);
+    }
+  }
+
+  private Object toStandardPythonValue(IValueMeta valueMeta, Object value)
+      throws HopValueException {
     if (value == null) {
       return null;
     }
 
     return switch (valueMeta.getType()) {
+      case IValueMeta.TYPE_BINARY -> toPythonBytes(valueMeta.getBinary(value));
       case IValueMeta.TYPE_STRING -> valueMeta.getString(value);
       case IValueMeta.TYPE_INTEGER -> valueMeta.getInteger(value);
       case IValueMeta.TYPE_NUMBER -> valueMeta.getNumber(value);
-      case IValueMeta.TYPE_BIGNUMBER -> decimalFactory.execute(valueMeta.getBigNumber(value).toPlainString());
+      case IValueMeta.TYPE_BIGNUMBER ->
+          decimalFactory.execute(valueMeta.getBigNumber(value).toPlainString());
       case IValueMeta.TYPE_BOOLEAN -> valueMeta.getBoolean(value);
       case IValueMeta.TYPE_DATE, IValueMeta.TYPE_TIMESTAMP -> {
         Date date = valueMeta.getDate(value);
@@ -122,7 +190,7 @@ public final class HopPythonTypeBridge {
     };
   }
 
-  private Object fromPythonValue(String fieldName, IValueMeta valueMeta, Value value)
+  private Object fromStandardPythonValue(String fieldName, IValueMeta valueMeta, Value value)
       throws HopTransformException {
     if (value == null || value.isNull()) {
       return null;
@@ -130,7 +198,9 @@ public final class HopPythonTypeBridge {
 
     try {
       return switch (valueMeta.getType()) {
-        case IValueMeta.TYPE_STRING -> value.isString() ? value.asString() : stringFunction.execute(value).asString();
+        case IValueMeta.TYPE_BINARY -> fromPythonBytes(value);
+        case IValueMeta.TYPE_STRING ->
+            value.isString() ? value.asString() : stringFunction.execute(value).asString();
         case IValueMeta.TYPE_INTEGER -> toLong(value);
         case IValueMeta.TYPE_NUMBER -> toDouble(value);
         case IValueMeta.TYPE_BIGNUMBER -> toBigDecimal(value);
@@ -146,7 +216,8 @@ public final class HopPythonTypeBridge {
                 "Unsupported output type " + valueMeta.getTypeDesc() + " for " + fieldName);
       };
     } catch (Exception e) {
-      throw new HopTransformException("Unable to convert Python value for field '" + fieldName + "'", e);
+      throw new HopTransformException(
+          "Unable to convert Python value for field '" + fieldName + "'", e);
     }
   }
 

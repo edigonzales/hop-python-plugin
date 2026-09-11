@@ -17,6 +17,29 @@ public final class PyContextFacade {
   private final List<Object[]> emittedRows;
 
   private Object[] currentInputRow;
+  private boolean processingRow;
+  private long maxEmittedRows;
+  private RuntimeException signal;
+
+  void checkSignal() {
+    if (signal != null) throw signal;
+  }
+
+  private void signal(RuntimeException exception) {
+    if (signal == null) signal = exception;
+    throw signal;
+  }
+
+  public void setMaxEmittedRows(long limit) {
+    maxEmittedRows = limit;
+  }
+
+  public void endRow() {
+    processingRow = false;
+    currentInputRow = null;
+    emittedRows.clear();
+    signal = null;
+  }
 
   public PyContextFacade(
       GraalPyExecutionMode executionMode,
@@ -34,6 +57,8 @@ public final class PyContextFacade {
 
   public void beginRow(Object[] inputRow) {
     this.currentInputRow = inputRow;
+    processingRow = true;
+    signal = null;
     this.emittedRows.clear();
   }
 
@@ -49,6 +74,10 @@ public final class PyContextFacade {
 
   @Export
   public void emit(Value mapping) throws HopTransformException {
+    checkSignal();
+    if (!processingRow) throw new HopTransformException("emit is only allowed during process");
+    if (maxEmittedRows > 0 && emittedRows.size() >= maxEmittedRows)
+      signal(new IllegalStateException("Python output limit exceeded"));
     if (executionMode != GraalPyExecutionMode.EMIT_MANY) {
       throw new HopTransformException("ctx.emit(...) is only allowed in EMIT_MANY mode.");
     }
@@ -57,13 +86,22 @@ public final class PyContextFacade {
   }
 
   @Export
+  public void reject(String code, String message, String field) {
+    if (!processingRow) throw new IllegalStateException("reject is only allowed during process");
+    if (code == null || code.isBlank() || message == null || message.isBlank())
+      throw new IllegalArgumentException("reject requires a code and message");
+    signal(new RejectCurrentRowException(code, message, field));
+  }
+
+  @Export
   public void skip() {
-    throw new SkipCurrentRowException();
+    if (!processingRow) throw new IllegalStateException("skip is only allowed during process");
+    signal(new SkipCurrentRowException());
   }
 
   @Export
   public void abort(String message) {
-    throw new AbortTransformException(message);
+    signal(new AbortTransformException(message));
   }
 
   @Export
@@ -86,5 +124,16 @@ final class SkipCurrentRowException extends RuntimeException {
 final class AbortTransformException extends RuntimeException {
   AbortTransformException(String message) {
     super(message, null, false, false);
+  }
+}
+
+final class RejectCurrentRowException extends RuntimeException {
+  final String code;
+  final String field;
+
+  RejectCurrentRowException(String code, String message, String field) {
+    super(message, null, false, false);
+    this.code = code;
+    this.field = field;
   }
 }

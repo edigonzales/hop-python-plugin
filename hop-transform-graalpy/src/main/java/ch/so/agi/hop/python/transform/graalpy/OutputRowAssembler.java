@@ -9,13 +9,13 @@ import java.util.Map;
 import java.util.Set;
 import org.apache.hop.core.row.IRowMeta;
 import org.apache.hop.core.row.IValueMeta;
-import org.apache.hop.core.row.RowDataUtil;
 
 public final class OutputRowAssembler {
   private final IRowMeta outputRowMeta;
   private final List<FieldBinding> bindings;
   private final Set<String> allowedFields;
   private final int inputSize;
+  private final Map<String, IValueMeta> valueMetas = new LinkedHashMap<>();
 
   public OutputRowAssembler(
       IRowMeta inputRowMeta, IRowMeta outputRowMeta, List<GraalPyOutputField> outputFields) {
@@ -31,11 +31,12 @@ public final class OutputRowAssembler {
       IValueMeta valueMeta = outputRowMeta.getValueMeta(outputIndex);
       bindings.add(new FieldBinding(field, outputIndex, valueMeta));
       allowedFields.add(field.getName());
+      valueMetas.put(field.getName(), valueMeta);
     }
   }
 
   public Object[] createOutputRow(Object[] inputRow, Map<String, Object> values) {
-    Object[] outputRow = RowDataUtil.resizeArray(inputRow, outputRowMeta.size());
+    Object[] outputRow = java.util.Arrays.copyOf(inputRow, outputRowMeta.size());
     for (FieldBinding binding : bindings) {
       if (binding.field.isReplaceExisting()) {
         if (values.containsKey(binding.field.getName())) {
@@ -53,11 +54,7 @@ public final class OutputRowAssembler {
   }
 
   public IValueMeta getOutputValueMeta(String fieldName) {
-    return bindings.stream()
-        .filter(binding -> binding.field.getName().equals(fieldName))
-        .map(binding -> binding.valueMeta)
-        .findFirst()
-        .orElse(null);
+    return valueMetas.get(fieldName);
   }
 
   public List<Map<String, Object>> buildFieldMetadata(IRowMeta inputRowMeta) {
