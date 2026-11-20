@@ -93,7 +93,7 @@ Field metadata contains `name`, `type`, `length` and `precision`. Global Python 
 
 - Inline code remains stored in pipeline metadata.
 - File paths support Hop variables. Relative paths resolve against `${PROJECT_HOME}`; without it, use an absolute path.
-- A file is loaded once per session as UTF-8. Its absolute path and SHA-256 are logged. Editing it does not change an already running session.
+- A file is loaded once per session as UTF-8. Its absolute path is logged. Editing it does not change an already running session.
 - There is no substitution of variables in Python source and no automatic addition of the script directory to the Python import path. Install reusable importable modules in the configured venv.
 
 The editor's **Load**, **Save** and **Save as** remain import/export conveniences. Their last-used path is local to the dialog session and is independent of the persisted runtime file path. Existing saved scripts are never rewritten by migration.

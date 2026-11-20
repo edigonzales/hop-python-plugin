@@ -47,7 +47,7 @@ class PythonDialogSmokeTest {
                   } else if (state[0] == 2 && stop) {
                     boolean loaded =
                         controls(display).stream()
-                            .anyMatch(c -> c instanceof Text t && t.getText().contains("SHA-256="));
+                            .anyMatch(c -> c instanceof Text t && t.getText().contains("Python script "));
                     if (loaded) {
                       button(display, "Stop").notifyListeners(SWT.Selection, new Event());
                       state[0]++;

@@ -2,7 +2,6 @@ package ch.so.agi.hop.python.transform.graalpy;
 
 import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
-import java.security.MessageDigest;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.function.*;
@@ -135,12 +134,7 @@ public final class PythonRuntimeSession implements AutoCloseable {
             scriptName = path.toString();
             script = Files.readString(path, StandardCharsets.UTF_8);
           }
-          String hash =
-              HexFormat.of()
-                  .formatHex(
-                      MessageDigest.getInstance("SHA-256")
-                          .digest(script.getBytes(StandardCharsets.UTF_8)));
-          log.write("INFO", "Python script " + scriptName + "; SHA-256=" + hash);
+          log.write("INFO", "Python script " + scriptName);
           context.eval(Source.newBuilder("python", script, scriptName).buildLiteral());
           scriptLoaded = true;
           process = function("process", true);
