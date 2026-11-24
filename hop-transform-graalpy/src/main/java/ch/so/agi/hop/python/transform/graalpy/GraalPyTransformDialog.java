@@ -284,7 +284,7 @@ public class GraalPyTransformDialog extends BaseTransformDialog {
       return;
     try {
       editorFile = Path.of(path);
-      script.setText(GraalPyScriptFileSupport.load(editorFile));
+      script.setText(Files.readString(editorFile));
       save.setEnabled(true);
     } catch (Exception e) {
       error(e);
@@ -300,7 +300,7 @@ public class GraalPyTransformDialog extends BaseTransformDialog {
         path = Path.of(chosen);
         if (Files.exists(path) && !confirm("Overwrite " + path + "?")) return;
       }
-      GraalPyScriptFileSupport.save(path, script.getText());
+      Files.writeString(path, script.getText());
       editorFile = path;
       save.setEnabled(true);
     } catch (Exception e) {

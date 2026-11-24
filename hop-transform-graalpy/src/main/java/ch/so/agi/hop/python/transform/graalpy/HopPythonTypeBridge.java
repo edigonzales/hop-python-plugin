@@ -127,15 +127,15 @@ public final class HopPythonTypeBridge {
                 PKG, "GraalPyTransform.Exception.InvalidOutputKey", keyValue.toString()));
       }
       String fieldName = keyValue.asString();
-      if (!assembler.getAllowedFields().contains(fieldName)) {
+      IValueMeta fieldMeta = assembler.getOutputValueMeta(fieldName);
+      if (fieldMeta == null) {
         throw new HopTransformException(
             BaseMessages.getString(
                 PKG, "GraalPyTransform.Exception.UnknownOutputField", fieldName));
       }
       snapshot.put(
           fieldName,
-          fromPythonValue(
-              fieldName, assembler.getOutputValueMeta(fieldName), entry.getArrayElement(1)));
+          fromPythonValue(fieldName, fieldMeta, entry.getArrayElement(1)));
     }
     return snapshot;
   }
