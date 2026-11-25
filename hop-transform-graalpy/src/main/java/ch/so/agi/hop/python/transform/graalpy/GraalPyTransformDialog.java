@@ -5,6 +5,8 @@ import java.util.*;
 import org.apache.hop.core.variables.IVariables;
 import org.apache.hop.pipeline.PipelineMeta;
 import org.apache.hop.pipeline.transform.ITransformMeta;
+import org.apache.hop.ui.core.FormDataBuilder;
+import org.apache.hop.ui.core.PropsUi;
 import org.apache.hop.ui.core.dialog.BaseDialog;
 import org.apache.hop.ui.core.dialog.ErrorDialog;
 import org.apache.hop.ui.core.widget.*;
@@ -46,13 +48,22 @@ public class GraalPyTransformDialog extends BaseTransformDialog {
   public String open() {
     shell = new Shell(getParent(), SWT.DIALOG_TRIM | SWT.RESIZE | SWT.MAX | SWT.MIN);
     shell.setText("GraalPy");
+    // Hop adds its Help button to the shell with FormData for registered transforms.
+    FormLayout shellLayout = new FormLayout();
+    shellLayout.marginWidth = PropsUi.getFormMargin();
+    shellLayout.marginHeight = PropsUi.getFormMargin();
+    shell.setLayout(shellLayout);
     setShellImage(shell, input);
-    shell.setLayout(new GridLayout(2, false));
-    label(shell, "Transform name");
-    name = text(shell, Objects.toString(transformName, ""));
-    label(shell, "Execution mode");
-    mode = combo(shell, new String[] {"RETURN_ONE", "EMIT_MANY"}, input.getExecutionMode());
-    TabFolder tabs = new TabFolder(shell, SWT.NONE);
+    Composite content = new Composite(shell, SWT.NONE);
+    GridLayout contentLayout = new GridLayout(2, false);
+    contentLayout.marginWidth = 0;
+    contentLayout.marginHeight = 0;
+    content.setLayout(contentLayout);
+    label(content, "Transform name");
+    name = text(content, Objects.toString(transformName, ""));
+    label(content, "Execution mode");
+    mode = combo(content, new String[] {"RETURN_ONE", "EMIT_MANY"}, input.getExecutionMode());
+    TabFolder tabs = new TabFolder(content, SWT.NONE);
     tabs.setLayoutData(new GridData(SWT.FILL, SWT.FILL, true, true, 2, 1));
     Composite scriptPage = page(tabs, "Script", 2);
     label(scriptPage, "Source");
@@ -185,7 +196,14 @@ public class GraalPyTransformDialog extends BaseTransformDialog {
 
     Composite actions = new Composite(shell, SWT.NONE);
     actions.setLayout(new RowLayout());
-    actions.setLayoutData(new GridData(SWT.RIGHT, SWT.CENTER, true, false, 2, 1));
+    actions.setLayoutData(new FormDataBuilder().right(100, 0).bottom(100, 0).result());
+    content.setLayoutData(
+        new FormDataBuilder()
+            .left(0, 0)
+            .top(0, 0)
+            .right(100, 0)
+            .bottom(actions, -PropsUi.getMargin())
+            .result());
     button(
         actions,
         "Test…",
